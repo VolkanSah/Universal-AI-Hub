@@ -18,6 +18,10 @@
 # DO NOT DELETE — file identifier used by all parsers
 [PYFUN_FILE = .pyfun]
 
+# healer (optinal)
+# HEALER_TIMEOUT=10        # subprocess kill timeout per run (seconds)
+# HEALER_MAX_REPAIRS=5     # max LLM repair attempts before giving up
+
 # =============================================================================
 # HUB — Core identity & transport config
 # =============================================================================
@@ -412,6 +416,23 @@ SEARCH_TIMEOUT_SEC      = "30"
 # Tools are registered in mcp.py only if their provider ENV key exists!
 # =============================================================================
 [TOOLS]
+  [TOOL.heal_code]
+  active           = "true"
+  description      = "Execute Python code, catch runtime errors, auto-repair via LLM fallback chain"
+  provider_type    = "heal"
+  default_provider = "gemini"      # cheapest first — haiku as fallback via .pyfun chain
+  timeout_sec      = "60"
+  system_prompt    = ""            # healer uses its own internal system prompts
+  [TOOL.heal_code_END]
+ 
+  [TOOL.heal_task]
+  active           = "true"
+  description      = "Generate Python code from a task description, then auto-repair until it runs"
+  provider_type    = "heal_generate"
+  default_provider = "gemini"
+  timeout_sec      = "90"
+  system_prompt    = ""
+  [TOOL.heal_task_END]
 
   [TOOL.llm_complete]
   active              = "true"
