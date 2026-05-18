@@ -132,6 +132,40 @@ async def run(
     # --- Unknown provider type ---
     logger.warning(f"Tool '{tool_name}' has unknown provider_type '{provider_type}' — skipped.")
     return f"Tool '{tool_name}' provider type '{provider_type}' is not yet implemented."
+    # In run() — add after the existing "persist" block:
+ 
+    # --- Heal tools (self-healing runtime debugger) --------------------------
+    if provider_type == "heal":
+        from . import healer
+        from . import providers as _providers
+ 
+        async def _llm(prompt, system):
+            return await _providers.llm_complete(
+                prompt=prompt,
+                provider_name=default_provider or None,
+                system=system,
+            )
+ 
+        result = await healer.heal(code=prompt, llm_fn=_llm)
+        return result.to_text()
+ 
+    if provider_type == "heal_generate":
+        from . import healer
+        from . import providers as _providers
+ 
+        async def _llm(prompt, system):
+            return await _providers.llm_complete(
+                prompt=prompt,
+                provider_name=default_provider or None,
+                system=system,
+            )
+ 
+        result = await healer.generate_and_heal(task=prompt, llm_fn=_llm)
+        return result.to_text()
+ 
+ 
+# =============================================================================
+
 
 
 # =============================================================================
