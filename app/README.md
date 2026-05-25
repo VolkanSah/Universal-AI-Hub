@@ -1,2 +1,2 @@
-> Haha! Sandboxed MCP server! (No nelson image cause big "D")
+> Haha! Sandboxed REST-API/MCP server! (No nelson image cause big "D")
 
