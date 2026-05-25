@@ -1,5 +1,6 @@
 # =============================================================================
 # .pyfun — PyFundaments App Configuration
+# !!! Please set chmod for this file to chmod 644 better 600 !!!
 # Single source of truth for app/* modules (provider, models, tools, hub)
 # Part of: Universal MCP Hub on PyFundaments
 # =============================================================================
