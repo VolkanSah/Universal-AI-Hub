@@ -22,6 +22,7 @@
 #   No network access in subprocess (inherits OS sandbox if present).
 #   Stdout/stderr captured, never executed as hub code.
 # =============================================================================
+# Idea from claude after a bug question from me and an idea... maybe will not implement... craft an better runtime debuger
 
 import asyncio
 import logging
