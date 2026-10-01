@@ -1,3 +1,4 @@
+# Memo: NIcht implemtiert! Und wird wahrscheinlich auch nicht, evtl in die workflows einbauen ? hinter dem guard vor den tools! 
 # =============================================================================
 # app/healer.py
 # Self-Healing Runtime Debugger — Hub-native Tool
