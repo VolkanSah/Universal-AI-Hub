@@ -539,14 +539,16 @@ Dual-licensed:
 - [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0)
 - [Ethical Security Operations License v1.1 (ESOL)](ESOL) — mandatory, non-severable
 
-By using this software you agree to all ethical constraints defined in ESOL v1.1.
+By using this software you agree to all ethical constraints defined in ESOL v2.1.
 
 </details>
 
 ---
 
-*Architecture, security decisions, and PyFundaments by Volkan Kücükbudak.*
-*Built with Claude (Anthropic) as a typing assistant for docs (and the occasional bug).*
+*Architecture, security decisions and 100 % of brocken code ( ok 100 % Running with less than 1 % mistakes) and PyFundaments by me.*
+*Built with Claude (Anthropic not claude coder or codex or wtf!) after 20 % own desaster 5 seps bevor relase, played with GLM to see an outher focus but at the end as a typing assistant for docs (and the occasional bug) after i brick my hole work after i made it to complex... so i mean its not ready!*
 
-> crafted with passion — just wanted to understand how it works, don't actually need it, have a CLI 😄
+> crafted with passion - just wanted to understand how it works, don't actually need it, have a CLI 😄
+> 
+> README.md craftet (rewritten) by gemini 3 Pro
 
