@@ -1,4 +1,4 @@
-# extractet from our discord community banl :D
+# extractet from our discord community bank :D
 # =============================================================================
 # app/discord_api.py
 # Discord Integration — Modular API layer (REST + Interactions Endpoint)
