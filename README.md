@@ -9,9 +9,9 @@ license: apache-2.0
 short_description: Secure Multi-LLM Gateway — (Streamable HTTP / SSE)
 ---
 
-# Multi-LLM API Gateway
+### my Universal AI Hub (Sandboxed)
 
-— or Universal MCP Hub (Sandboxed)  
+- or  Multi-LLM API Gateway
 — or secure AI wrapper with dual interface: REST + MCP
 
 aka: a clean, secure starting point for your own projects.  
