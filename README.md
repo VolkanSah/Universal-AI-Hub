@@ -9,15 +9,15 @@ license: apache-2.0
 short_description: Secure Multi-HUB i craft since month
 ---
 
-### my Universal AI Hub (Sandboxed)
+# Universal AI Hub 🛡️
 
-- or  Multi-LLM API Gateway
-— or secure AI wrapper with dual interface: REST + MCP
+- or **Multi-LLM API Gateway**
+- or secure AI wrapper with dual interface: REST + MCP
 
-aka: a clean, secure starting point for your own projects.  
+aka: a clean, secure starting point for your own projects.
 Pick the description that fits your use case. They're all correct.
 
-> A production-grade **the-thing** that actually thinks about security.  
+> A **the-thing** that actually thinks about security.
 > Built on [PyFundaments](PyFundaments.md) — running on **simpleCity**.
 
 ```
@@ -27,25 +27,49 @@ No key → no tool → no crash → no exposed secrets
 > [!WARNING]
 > Most MCP servers are prompts dressed up as servers. This one has a real architecture.
 
----
-
 > [!IMPORTANT]
-> This project is under active development — always use the latest release from [Codey Lab](https://github.com/Codey-LAB/Multi-LLM-API-Gateway) *(more stable builds land here first)*.  
+> This project is under active development — always use the latest release from [Codey Lab](https://github.com/Codey-LAB/Multi-LLM-API-Gateway) *(more stable builds land here first)*.
 > This repo ([DEV](https://github.com/VolkanSah/Multi-LLM-API-Gateway)) is where the chaos happens. 🔬 A ⭐ on the repos will be cool 😙
 
 ---
 
-## What's new in v1.1.0 (Rebuild)
+<details open>
+<summary><b>🧠 Usernote: how this was actually built (no vibecode — or am I lying? 😄)</b></summary>
 
-> Full changelog in [`REVIEW.md`](REVIEW.md). Highlights:
+I wrote this myself. And I broke myself doing it — properly. Not "my code doesn't run" broken, but "I've been staring at my own architecture for months and my brain is soup" broken. At that point AI stepped in — not to write my project, but to help me untangle my thoughts and shape what was already in my head.
+
+Is that vibecoding? **No.** Vibecoding is shipping code you don't understand and hoping for the best. I understand every line here — including the weird ones. The guardian pattern, the sandbox, the `.pyfun` single-source-of-truth, the no-key-no-tool rule: my decisions, made before any AI touched anything. I code differently than everyone else — you'll see it the moment you read the source. The AI was a sparring partner with fast fingers (and, to be fair, the occasional bug that I then had to hunt).
+
+...or am I lying? Don't take my word for it. Read the code.
+
+</details>
+
+<details open>
+<summary><b>🆕 What's new in v1.2.0 — memory that survives a reboot</b></summary>
+
+> Full changelog (with proof) in [`REVIEW.md`](REVIEW.md). The short version, my words:
+
+- **Memory orchestration.** `persist_result` without `DATABASE_URL` used to throw a `RuntimeError`. Now everything lands in a restart-safe `persist_queue` in SQLite — proven: 3 entries in, reboot, 3 entries out — and a background flusher pushes them into PostgreSQL whenever the bridge is back. `persist_status` (MCP + `/api`) shows queue depth, attempts and bridge state.
+- **Auto-pricing, konsequent.** I asked whether the manual `cost_*` lines still make sense. OpenRouter FAQ, checked live: no markup, per-token = vendor list price (the ~5.5 % fee hits credit purchase, not tokens). So 34 cost lines are gone. What stays: my own models (`smollm2-360m` = 0.0 — no external source knows my own deployment). `.pyfun` values still win as override, always.
+- **ShellMaster = SECURITY LEVEL ROT.** My CLI commander for the local Quart agent (`localhost:5004`) — commands run on YOUR machine, so: local only, never on a public Space. Token lives in `.env` via `SHELLMASTER_TOKEN` (same pattern as every provider); the `.pyfun` field is only a local test fallback. `active = "false"`. Stays off until someone consciously flips it.
+- **Score slot for my filter.** `hub_results.score` exists — the hub passes it through completely uninterpreted. What's worth remembering long-term gets decided by my own filter, not by the hub. That part is my code, my rules.
+
+*Tests: 26/26 orchestration + 4/4 smoke — green.*
+
+<details>
+<summary><b>v1.1.0 (the rebuild) — older news</b></summary>
 
 - **Fixed:** `/mcp` 404 (mount middleware stripped the prefix FastMCP expects) and the missing session-manager lifespan — MCP is fully functional again.
-- **New:** **Auto model pricing** — costs are fetched from the public OpenRouter models API + the LiteLLM community price list, cached in `db_sync` (24h TTL). Your `.pyfun [MODELS]` values always win as override. Manual cost maintenance is over.
-- **New:** Brave + Tavily search providers implemented with fallback chain — `web_search` registers as soon as `BRAVE_API_KEY` or `TAVILY_API_KEY` is set.
+- **New:** **Auto model pricing** — costs fetched from the public OpenRouter models API + the LiteLLM community price list, cached in `db_sync` (24h TTL). `.pyfun [MODELS]` values win as override.
+- **New:** Brave + Tavily search providers with fallback chain — `web_search` registers as soon as `BRAVE_API_KEY` or `TAVILY_API_KEY` is set.
 - **New:** `db_query` as MCP tool (SELECT-only, app/* tables).
-- **Cleanup:** dead code removed, `requirements.txt` now pins `mcp>=1.10,<2` (not `fastmcp`), LF line endings.
+- **Cleanup:** dead code removed, `requirements.txt` pins `mcp>=1.10,<2` (not `fastmcp`), LF line endings.
 
-## Why this exists
+</details>
+</details>
+
+<details>
+<summary><b>❓ Why this exists</b></summary>
 
 The AI ecosystem is full of servers with hardcoded keys, `os.environ` scattered everywhere, zero sandboxing. One misconfigured fork and your API keys are gone.
 
@@ -58,11 +82,12 @@ This hub is the antidote:
 - **Graceful degradation** — No key? Tool doesn't register. Server still starts. No crash, no error, no empty `None` floating around.
 - **Single source of truth** — All tool/provider/model config lives in `app/.pyfun`. Adding a provider = edit one file. No code changes.
 
----
+</details>
 
-## Two Interfaces — One Server
+<details>
+<summary><b>🔌 Two interfaces — one server</b></summary>
 
-This hub exposes **two completely independent interfaces** on the same hypercorn instance:
+Two completely independent interfaces on the same hypercorn instance:
 
 ```
 POST /api          → REST interface — for custom clients, desktop apps, CMS plugins
@@ -72,9 +97,7 @@ GET /              → Health check — uptime, status
 
 They share the same tool registry, provider config, and fallback chain. Adding a tool once makes it available on both interfaces automatically.
 
-### REST API (`/api`)
-
-Simple JSON POST — no protocol overhead, works with any HTTP client:
+**REST (`/api`)** — simple JSON POST, no protocol overhead, works with any HTTP client:
 
 ```json
 POST /api
@@ -83,25 +106,24 @@ POST /api
 
 Used by: Desktop Client (`DESKTOP_CLIENT/hub.py`), WordPress plugin, any custom integration.
 
-### MCP Interface (`/mcp`)
+**MCP (`/mcp`)** — full MCP protocol: tool discovery, structured calls, streaming responses.
 
-Full MCP protocol — tool discovery, structured calls, streaming responses.
-
-**Primary transport: Streamable HTTP** (MCP spec 2025-11-25)  
-**Fallback transport: SSE** (legacy, configurable via `.pyfun`)
-
-Configured via `HUB_TRANSPORT` in `app/.pyfun [HUB]`:
+- Primary transport: **Streamable HTTP** (MCP spec 2025-11-25)
+- Fallback transport: **SSE** (legacy, configurable via `.pyfun`)
 
 ```ini
+[HUB]
 HUB_TRANSPORT = "streamable-http"   # default — MCP spec 2025-11-25
 # HUB_TRANSPORT = "sse"             # legacy fallback for older clients
+[HUB_END]
 ```
 
-Used by: Claude Desktop, Cursor, Windsurf, any MCP-compatible client.
+Auth, rate limiting and logging can all hook into the `/mcp` route in `app/app.py` before a request ever reaches FastMCP.
 
----
+</details>
 
-## Architecture
+<details>
+<summary><b>🏗 Architecture — the sandbox is structural</b></summary>
 
 ```
 main.py (Guardian)
@@ -120,12 +142,12 @@ main.py (Guardian)
      ├── app/tools.py       ← Tool registry (key-gated)
      ├── app/providers.py   ← LLM + Search execution + fallback chain
      ├── app/models.py      ← Model limits, costs, capabilities
+     ├── app/shellmaster.py ← CLI commander (SECURITY LEVEL ROT — local only)
+     ├── app/pricing.py     ← Auto model pricing (OpenRouter + LiteLLM)
      ├── app/config.py      ← .pyfun parser (single source of truth)
-     └── app/db_sync.py     ← Internal SQLite IPC (app/* state only)
-                              ≠ fundaments/postgresql.py (Guardian-only)
+     └── app/db_sync.py     ← SQLite: short-term state + persist_queue (memory bridge)
+                              ≠ fundaments/postgresql.py (Guardian-only, long-term)
 ```
-
-**The sandbox is structural:**
 
 ```python
 # app/app.py — fundaments unpacked ONCE, NEVER stored globally
@@ -139,61 +161,54 @@ async def start_application(fundaments: Dict[str, Any]) -> None:
     # fundaments are never passed into other app/* modules.
 ```
 
-`app/app.py` never calls `os.environ`. Never imports from `fundaments/`. Never reads `.env`.  
+`app/app.py` never calls `os.environ`. Never imports from `fundaments/`. Never reads `.env`.
 This isn't documentation. It's enforced by the import structure.
 
-### Why Quart + hypercorn?
+**Why Quart + hypercorn?**
 
 **Quart** is async Flask — fully `async/await` native. FastMCP's handlers are async; mixing sync Flask would require thread hacks. With Quart, `/mcp` hands off directly to FastMCP — no bridging, no blocking.
 
-**hypercorn** is an ASGI server (vs. waitress/gunicorn which are WSGI). WSGI servers handle one request per thread — wrong for long-lived MCP connections. hypercorn handles both Streamable HTTP and SSE natively, and runs without extra config on HuggingFace Spaces. HTTP/2 support (`config.h2 = True`) is built-in — relevant for Streamable HTTP performance at scale.
+**hypercorn** is an ASGI server (vs. waitress/gunicorn which are WSGI). WSGI servers handle one request per thread — wrong for long-lived MCP connections. hypercorn handles both Streamable HTTP and SSE natively, and runs without extra config on HuggingFace Spaces. HTTP/2 support (`config.h2 = True`) is built-in.
 
-The `/mcp` route in `app.py` remains the natural interception point regardless of transport — auth checks, rate limiting, and logging can all be added there before the request reaches FastMCP.
+</details>
 
----
+<details>
+<summary><b>💾 Memory — short-term, long-term, and my filter (v1.2.0)</b></summary>
 
-## Two Databases — One Architecture
-
+The design is deliberately simple:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  Guardian Layer (fundaments/*)                              │
-│                                                             │
-│  postgresql.py   → Cloud DB (e.g. Neon, Supabase)          │
-│                    asyncpg pool, SSL enforced               │
-│                                                             │
-│  user_handler.py → SQLite (users + sessions tables)        │
-│                    PBKDF2-SHA256 password hashing           │
-│                    Session validation incl. IP + UserAgent  │
-│                    Account lockout after 5 failed attempts  │
-│                                                             │
-└──────────────────────┬──────────────────────────────────────┘
-                       │ inject as fundaments dict
-                       ▼
-┌─────────────────────────────────────────────────────────────┐
-│  App Layer (app/*)                                          │
-│                                                             │
-│  db_sync.py  → SQLite (hub_state + tool_cache tables)      │
-│                aiosqlite (async, non-blocking)              │
-│                NEVER touches users/sessions tables          │
-│                Relocated to /tmp/ on HF Spaces auto        │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
+SQLite  = short-term memory  — all AI tools read & write here, nobody waits for the cloud
+SQLite persist_queue = the bridge — restart-safe, survives reboots (proven)
+PostgreSQL = long-term memory — what survived MY filter goes here
 ```
 
-**Table ownership — hard rule:**
+```
+persist_result (MCP + /api)
+   ↓ enqueue_persist()        ← immediately, ALWAYS, no crash — even without DATABASE_URL
+persist_queue (SQLite)        ← survives restarts; on HF Spaces /tmp, PG is the only durable memory
+   ↓ flush_persist_queue()    ← background flusher, retry every 60 s (configurable)
+PostgreSQL hub_results        ← (id, created_at, source, model, score, payload JSONB)
+```
+
+- **No `DATABASE_URL`?** `status: "queued"` — no RuntimeError, no 502, nothing lost.
+- **PostgreSQL down?** Entry stays, `attempts` +1, sanitized `last_error`. Flusher catches up when the bridge returns.
+- **`score REAL`** — a reserved slot for my own quality filter. The hub passes it through untouched; the filter writes it (or filters on read) later. No hub code interprets it. That's on purpose — my filter, my rules.
+- **Limits:** queue max 500 (oldest evicted, like `tool_cache`) · at-least-once semantics (a duplicate beats a loss) · observability via `persist_status` (queue depth, oldest entry, attempts, bridge state).
+
+**Guardian layer vs app layer — table ownership, hard rule:**
 
 | Table | Owner | Access |
 | :--- | :--- | :--- |
 | `users` | `fundaments/user_handler.py` | Guardian only |
 | `sessions` | `fundaments/user_handler.py` | Guardian only |
-| `hub_state` | `app/db_sync.py` | app/* only |
-| `tool_cache` | `app/db_sync.py` | app/* only |
-| `hub_results` | PostgreSQL / Guardian | via `persist_result` tool |
+| `hub_state`, `tool_cache`, `persist_queue` | `app/db_sync.py` | app/* only |
+| `hub_results` | PostgreSQL / Guardian | via `persist_result` → queue → flusher |
 
----
+</details>
 
-## Tools
+<details>
+<summary><b>🧰 Tools — no key, no tool, server still starts</b></summary>
 
 Tools register at startup — only if the required API key exists. No key, no tool. Server always starts.
 
@@ -205,9 +220,9 @@ Tools register at startup — only if the required API key exists. No key, no to
 | `HF_TOKEN` | `llm_complete` | HuggingFace Inference API |
 | `BRAVE_API_KEY` | `web_search` | Independent web index |
 | `TAVILY_API_KEY` | `web_search` | AI-optimized search with synthesized answers |
-| `DATABASE_URL` | `cloud DB` | e.g. Neon, Supabase |
-| `DATABASE_URL` | `db_query`, `persist_result` | SQLite read + PostgreSQL write |
-| *(always)* | `list_active_tools` | Shows key names only — never values |
+| `DATABASE_URL` | `persist_result`, `persist_status` | Long-term memory bridge (queue without it) |
+| `SHELLMASTER_TOKEN` | `shellmaster*` | ⛔ SECURITY LEVEL ROT — local only, `active="false"` |
+| *(always)* | `list_active_tools` | Shows key names only — never values. Plus `pricing_stats` |
 | *(always)* | `health_check` | Status + uptime + active transport |
 | *(always)* | `get_model_info` | Limits, costs, capabilities per model (auto-merged) |
 | *(always)* | `get_model_pricing` | Auto-fetched costs — `.pyfun` values win as override |
@@ -229,12 +244,13 @@ system_prompt    = "You are an expert code reviewer. Analyze the given code for 
 [TOOL.code_review_END]
 ```
 
-Current built-in tools: `llm_complete`, `code_review`, `summarize`, `translate`, `web_search`, `db_query`  
-Future hooks (commented, ready): `image_gen`, `code_exec`, `shellmaster_2.0`, Discord, GitHub webhooks
+Current built-in tools: `llm_complete`, `code_review`, `summarize`, `translate`, `web_search`, `db_query`, `persist_result`, `persist_status`
+Future hooks (commented, ready): `image_gen`, `code_exec`, ShellMaster 2.0 (ROT — local only), Discord, GitHub webhooks
 
----
+</details>
 
-## LLM Fallback Chain
+<details>
+<summary><b>🔁 Fallback chain</b></summary>
 
 All LLM providers share one `llm_complete` tool. If a provider fails, the hub walks the fallback chain from `.pyfun`:
 
@@ -254,9 +270,10 @@ fallback_to = "openrouter"
 
 Same pattern applies to search providers (`brave → tavily`).
 
----
+</details>
 
-## Quick Start
+<details open>
+<summary><b>🚀 Quick start</b></summary>
 
 ### HuggingFace Spaces (recommended)
 
@@ -284,16 +301,19 @@ Minimum required ENV vars (everything else is optional):
 PYFUNDAMENTS_DEBUG=""
 LOG_LEVEL="INFO"
 LOG_TO_TMP=""
-ENABLE_PUBLIC_LOGS="true"
+ENABLE_PUBLIC_LOGS="false"
 HF_TOKEN=""
 HUB_SPACE_URL=""
 ```
 
+> Note: HF Spaces prints stdout to a **publicly visible log tab**. `ENABLE_PUBLIC_LOGS="false"` keeps your logs yours. Default in code is still `true` — my fundament, my call, documented everywhere; flip it consciously.
+
 Transport is configured in `app/.pyfun [HUB]` — not via ENV.
 
----
+</details>
 
-## Connect an MCP Client
+<details>
+<summary><b>🔗 Connect an MCP client</b></summary>
 
 ### Streamable HTTP (default — MCP spec 2025-11-25)
 
@@ -334,16 +354,17 @@ Transport is configured in `app/.pyfun [HUB]` — not via ENV.
 }
 ```
 
-> Same URL (`/mcp`) for both transports — the protocol is negotiated automatically.  
+> Same URL (`/mcp`) for both transports — the protocol is negotiated automatically.
 > SSE fallback is for older clients that don't support Streamable HTTP yet.
+> (`HUB_STATELESS="true"` is intentional for HF Spaces — no `Mcp-Session-Id` header is expected, not a bug.)
 
----
+</details>
 
-## Desktop Client
-###### (experimental — ~80% AI generated)
+<details>
+<summary><b>🖥 Desktop client (experimental — ~80 % me, 20 % typing assistant)</b></summary>
 
-A full PySide6 desktop client is included in `DESKTOP_CLIENT/hub.py`.  
-Communicates via the REST `/api` endpoint — no MCP protocol overhead.  
+A full PySide6 desktop client is included in `DESKTOP_CLIENT/hub.py`.
+Communicates via the REST `/api` endpoint — no MCP protocol overhead.
 Ideal for private or non-public Spaces.
 
 ```bash
@@ -354,6 +375,7 @@ python DESKTOP_CLIENT/hub.py
 ```
 
 **Features:**
+
 - Multi-chat with persistent history
 - Tool / Provider / Model selector loaded live from your Hub
 - File attachments: images, PDF, CSV, Excel, ZIP, source code
@@ -364,9 +386,10 @@ python DESKTOP_CLIENT/hub.py
 
 [→ Desktop Client docs](DESKTOP_CLIENT/README.md)
 
----
+</details>
 
-## CMS & Custom Clients
+<details>
+<summary><b>🧩 CMS & custom clients</b></summary>
 
 | Client | Interface used | Notes |
 | :--- | :--- | :--- |
@@ -376,9 +399,10 @@ python DESKTOP_CLIENT/hub.py
 | Claude Desktop | MCP `/mcp` | Streamable HTTP |
 | Cursor / Windsurf | MCP `/mcp` | Streamable HTTP |
 
----
+</details>
 
-## Configuration (.pyfun)
+<details>
+<summary><b>⚙️ Configuration (.pyfun) — one file to rule the app</b></summary>
 
 `app/.pyfun` is the single source of truth for all app behavior. Three tiers:
 
@@ -397,6 +421,8 @@ HUB_STATELESS   = "true"              # true = HF Spaces safe, no session state
 HUB_PORT        = "7860"
 [HUB_END]
 ```
+
+**About `[MODELS]` costs (v1.2.0):** auto-pricing fills everything from OpenRouter + LiteLLM. Manual `cost_*` lines only remain for models no external source can know — my own deployments. If you ever get different conditions than the public lists (custom deals exist), just add `cost_*` lines for THAT model — `.pyfun` wins, always. The section also carries `requests_per_min/day`, `context_tokens`, `capabilities` and the provider mapping — none of that exists in any price API.
 
 Adding a new LLM provider — two steps:
 
@@ -420,9 +446,10 @@ _PROVIDER_CLASSES = {
 }
 ```
 
----
+</details>
 
-## Dependencies
+<details>
+<summary><b>📦 Dependencies</b></summary>
 
 ```
 # PyFundaments Core (always required)
@@ -445,12 +472,13 @@ requests         — sync HTTP for tool workers
 # psycopg2-binary  — alternative PostgreSQL driver
 ```
 
-> **Note:** The package is `mcp` (not `fastmcp`) — `FastMCP` is imported from `mcp.server.fastmcp`.  
+> **Note:** The package is `mcp` (not `fastmcp`) — `FastMCP` is imported from `mcp.server.fastmcp`.
 > Streamable HTTP support requires `mcp >= 1.6.0`.
 
----
+</details>
 
-## Security Design
+<details>
+<summary><b>🛡 Security design</b></summary>
 
 - API keys live in HF Secrets / `.env` — never in `.pyfun`, never in code
 - `list_active_tools` returns key **names** only — never values
@@ -459,16 +487,18 @@ requests         — sync HTTP for tool workers
 - Direct execution of `app/app.py` blocked by design — warning + null-fundaments fallback
 - `fundaments/` initialized conditionally — missing services degrade gracefully, never crash
 - Streamable HTTP uses standard Bearer headers — no token-in-URL (unlike SSE)
+- ShellMaster: **SECURITY LEVEL ROT** — hardblock list (rm -rf, mkfs, …), JSONL command registry, explicit confirmation before every execution, local-only (`localhost:5004`), token via `.env`
 
 > PyFundaments is not perfect. But it's more secure than most of what runs in production today.
 
 [→ Full Security Policy](SECURITY.md)
 
----
+</details>
 
-## Foundation
+<details>
+<summary><b>🧱 Foundation: PyFundaments</b></summary>
 
-Built on [PyFundaments](PyFundaments.md) — a security-first Python boilerplate:
+Built on [PyFundaments](PyFundaments.md) — a security-first Python boilerplate, crafted by hand over months (see the usernote at the top):
 
 - `config_handler.py` — env loading with validation
 - `postgresql.py` — async DB pool (Guardian-only)
@@ -476,30 +506,31 @@ Built on [PyFundaments](PyFundaments.md) — a security-first Python boilerplate
 - `access_control.py` — role/permission management
 - `user_handler.py` — user lifecycle management
 - `security.py` — unified security manager composing the above
+- `debug.py` — conditional startup diagnostics
 
 None accessible from `app/*`. Injected as a validated dict by `main.py`.
 
-[→ PyFundaments Function Overview](PyFundaments%20–%20Function%20Overview.md)  
-[→ Module Docs](docs/app/)  
+[→ PyFundaments Function Overview](PyFundaments%20–%20Function%20Overview.md)
+[→ Module Docs](docs/app/)
 [→ Source Repo](https://github.com/VolkanSah/Multi-LLM-API-Gateway)
 
----
+</details>
 
-## Related Projects
+<details>
+<summary><b>📜 History & related projects</b></summary>
+
+[ShellMaster](https://github.com/VolkanSah/ChatGPT-ShellMaster) (2023, MIT) was the precursor — browser-accessible shell for ChatGPT with session memory, built before MCP was a concept. Universal AI Hub is its natural evolution: same idea, proper architecture, dual interface. And yes — the ShellMaster idea is back as a tool hook, now with a red security level and a conscience.
+
+Related:
 
 - [Customs LLMs for free — Build Your Own LLM Service](https://github.com/VolkanSah/SmolLM2-customs/)
 - [WP AI Hub (WordPress Client)](https://github.com/VolkanSah/WP-AI-HUB/)
 - [ShellMaster (2023 precursor)](https://github.com/VolkanSah/ChatGPT-ShellMaster)
 
----
+</details>
 
-## History
-
-[ShellMaster](https://github.com/VolkanSah/ChatGPT-ShellMaster) (2023, MIT) was the precursor — browser-accessible shell for ChatGPT with session memory, built before MCP was a concept. Universal MCP Hub is its natural evolution: same idea, proper architecture, dual interface.
-
----
-
-## License
+<details>
+<summary><b>⚖️ License — Apache 2.0 + ESOL, both mandatory</b></summary>
 
 Dual-licensed:
 
@@ -508,9 +539,12 @@ Dual-licensed:
 
 By using this software you agree to all ethical constraints defined in ESOL v1.1.
 
+</details>
+
 ---
 
-*Architecture, security decisions, and PyFundaments by Volkan Kücükbudak.*  
+*Architecture, security decisions, and PyFundaments by Volkan Kücükbudak.*
 *Built with Claude (Anthropic) as a typing assistant for docs (and the occasional bug).*
 
 > crafted with passion — just wanted to understand how it works, don't actually need it, have a CLI 😄
+
