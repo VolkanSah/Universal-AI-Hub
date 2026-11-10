@@ -539,14 +539,14 @@ Dual-licensed:
 - [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0)
 - [Ethical Security Operations License v1.1 (ESOL)](ESOL) — mandatory, non-severable
 
-By using this software you agree to all ethical constraints defined in ESOL v1.1.
+By using this software you agree to all ethical constraints defined in ESOL v2.1.
 
 </details>
 
 ---
 
 *Architecture, security decisions, and PyFundaments by Volkan Kücükbudak.*
-*Built with Claude (Anthropic) as a typing assistant for docs (and the occasional bug).*
+*Built with Claude (Anthropic) GLM as a typing assistant for docs (and the occasional bug) after i brick my hole work after i made it to complex*
 
 > crafted with passion — just wanted to understand how it works, don't actually need it, have a CLI 😄
 
