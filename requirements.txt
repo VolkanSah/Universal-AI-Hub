@@ -1,0 +1,34 @@
+# PyFundaments Core Dependencies (always needed)
+asyncpg
+python-dotenv
+passlib
+cryptography
+
+# MCP Hub Dependencies (needed for app/mcp.py)
+# Code imports mcp.server.fastmcp — the mcp SDK, NOT the fastmcp package.
+mcp>=1.10,<2
+httpx
+quart
+hypercorn
+
+# Internal SQLite IPC (needed for app/db_sync.py)
+aiosqlite    
+
+# HTTP client operations (API calls, webhooks)
+requests
+
+# Additional dependencies for specific app types:
+# Uncomment what your application needs
+
+# File operations (ML, data processing, file uploads)
+#aiofiles
+
+# Web applications (Flask-based apps, APIs)
+#Flask[async]
+
+# Discord bots
+#discord.py
+#PyNaCl
+
+# Alternative PostgreSQL driver (if not using asyncpg)
+#psycopg2-binary
