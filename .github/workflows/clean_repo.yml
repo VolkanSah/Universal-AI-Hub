@@ -1,0 +1,61 @@
+name: Clean Slate (Custom Keep List)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  wipe-repo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Rebuild Clean Branch with Whitelist
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # 1. Orphan Branch ohne Historie erstellen
+          git checkout --orphan temp-clean-slate
+          
+          # 2. Nur den Git-Index leeren (Festplatte bleibt unangetastet)
+          git read-tree --empty
+          
+          # =================================================================
+          # WHITELIST: Hier definierst du, was ERHALTEN bleiben soll.
+          # Nicht benötigte Zeilen einfach mit # auskommentieren!
+          # =================================================================
+          
+          # Core / Infrastructure
+          [ -e .github ] && git add .github/
+          [ -e README.md ] && git add README.md
+          [ -e .gitignore ] && git add .gitignore
+          [ -e .gitattributes ] && git add .gitattributes
+          
+          # Documentation & Legal
+          [ -e LICENSE ] && git add LICENSE
+          [ -e SECURITY.md ] && git add SECURITY.md
+          [ -e STATUS.md ] && git add STATUS.md
+          [ -e CONTRIBUTING.md ] && git add CONTRIBUTING.md
+          [ -e CODE_OF_CONDUCT.md ] && git add CODE_OF_CONDUCT.md
+          [ -e CITATION.cff ] && git add CITATION.cff
+          
+          # Individuelle Ergänzungen 
+          # [ -e .pyfun ] && git add .pyfun
+          # =================================================================
+          
+          # 3. Sauberen Commit erstellen
+          git commit -m "style: reset repository keeping whitelisted core metadata"
+          
+          # 4. Lokalen main-Branch durch den sauberen Branch ersetzen
+          git branch -D main
+          git branch -m main
+
+      - name: Force Push to Main
+        run: |
+          git push origin main --force

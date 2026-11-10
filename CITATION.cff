@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "If you use Universal MCP HUB in your security research, please cite it as follows."
+authors:
+- family-names: "Kücükbudak"
+  given-names: "Volkan"
+title: "Universal MCP Hub (Sandboxed)"
+version: 0.0.1
+date-released: 2026-03-09
+url: "https://github.com/VolkanSah/Universal-MCP-Hub/"
