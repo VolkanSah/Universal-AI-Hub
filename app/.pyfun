@@ -1,0 +1,561 @@
+# =============================================================================
+# .pyfun — PyFundaments App Configuration
+# Single source of truth for app/* modules (provider, models, tools, hub)
+# Part of: Universal MCP Hub on PyFundaments
+# =============================================================================
+# RULES:
+#   - All values in double quotes "value"
+#   - NO secrets here! Keys stay in .env → only ENV-VAR NAMES referenced here
+#   - Comment-out unused sections with #  → keep structure, parsers need it!
+#   - DO NOT DELETE headers or [X_END]   → parsers rely on these markers
+#   - Empty/unused values: ""            → never leave bare =
+# =============================================================================
+# TIERS:
+#   LAZY:       fill [HUB] + one [LLM_PROVIDER.*] only        → works
+#   NORMAL:     + [SEARCH_PROVIDER.*] + [MODELS.*]             → works better
+#   PRODUCTIVE: + [TOOLS] + [FALLBACK] + [HUB_LIMITS]          → full power
+# =============================================================================
+# DO NOT DELETE — file identifier used by all parsers
+[PYFUN_FILE = .pyfun]
+
+# =============================================================================
+# HUB — Core identity & transport config
+# =============================================================================
+[HUB]
+HUB_NAME            = "Multi-LLM-API-Gateway"
+HUB_VERSION         = "1.2.0"
+HUB_DESCRIPTION     = "Universal Hub built on PyFundaments"
+
+# Transport: sse (legacy/HF Spaces fallback) | streamable-http (MCP spec 2025-11-25)
+HUB_TRANSPORT       = "streamable-http"
+
+# Stateless: true = HF Spaces + horizontal scaling safe
+# false = nur wenn du Server-initiated Notifications brauchst
+HUB_STATELESS       = "true"
+
+HUB_HOST            = "0.0.0.0"
+HUB_PORT            = "7860"
+HUB_MODE            = "mcp"
+HUB_SPACE_URL       = ""
+[HUB_END]
+
+# =============================================================================
+# HUB_LIMITS — Request & retry behavior
+# =============================================================================
+[HUB_LIMITS]
+MAX_PARALLEL_REQUESTS   = "5"
+RETRY_COUNT             = "3"
+RETRY_DELAY_SEC         = "2"
+REQUEST_TIMEOUT_SEC     = "60"
+SEARCH_TIMEOUT_SEC      = "30"
+[HUB_LIMITS_END]
+
+# =============================================================================
+# PROVIDERS — All external API providers
+# Secrets stay in .env! Only ENV-VAR NAMES are referenced here.
+# =============================================================================
+[PROVIDERS]
+
+# ── LLM Providers ─────────────────────────────────────────────────────────────
+[LLM_PROVIDERS]
+
+
+  #  customs LLM
+  [LLM_PROVIDER.smollm]
+  active        = "true"
+  base_url      = "https://codey-lab-smollm2-customs.hf.space/v1"
+  env_key       = "SMOLLM_API_KEY"
+  default_model = "smollm2-360m"
+  models        = "smollm2-360m, codey-lab/model.universal-mcp-hub"
+  fallback_to   = "gemini"
+  [LLM_PROVIDER.smollm_END]
+
+  # AI Wrapper
+
+  [LLM_PROVIDER.anthropic]
+  active              = "true"
+  base_url            = "https://api.anthropic.com/v1"
+  env_key             = "ANTHROPIC_API_KEY"
+  api_version_header  = "2023-06-01"
+  default_model       = "claude-haiku-4-5-20251001"
+  models              = "claude-opus-4-6, claude-sonnet-4-6, claude-haiku-4-5-20251001"
+  supports_cache   = "true"
+  fallback_to         = "gemini"
+  [LLM_PROVIDER.anthropic_END]
+
+  [LLM_PROVIDER.gemini]
+  active        = "true"
+  base_url      = "https://generativelanguage.googleapis.com/v1beta"
+  env_key       = "GEMINI_API_KEY"
+  default_model = "gemini-2.5-flash"
+  models        = "gemini-2.0-flash, gemini-2.5-flash, gemini-2.5-flash-lite, gemini-3.1-flash-lite-preview, gemini-3-flash-preview, gemini-3.1-pro-preview"
+  supports_cache = "true"
+  fallback_to   = "openrouter"
+  [LLM_PROVIDER.gemini_END]
+
+  [LLM_PROVIDER.openrouter]
+  active              = "true"
+  base_url            = "https://openrouter.ai/api/v1"
+  env_key             = "OPENROUTER_API_KEY"      # → .env: OPENROUTER_API_KEY=sk-or-...
+  default_model       = "nvidia/nemotron-nano-9b-v2:free"
+  models              = "meta-llama/llama-3-8b-instruct, mistralai/mistral-7b-instruct, nvidia/nemotron-nano-9b-v2:free, google/gemma-3-27b-it:free, openai/gpt-oss-20b:free, mistralai/Mistral-7B-Instruct-v0.3, meta-llama/Llama-3.3-70B-Instruct"
+  fallback_to         = "huggingface"                      
+  [LLM_PROVIDER.openrouter_END]
+
+  [LLM_PROVIDER.huggingface]
+  active             = "true"
+  base_url           = "https://api-inference.huggingface.co/v1"
+  env_key            = "HF_TOKEN"                # → .env: HF_TOKEN=hf_...
+  default_model = "Qwen/Qwen2.5-Coder-32B-Instruct"
+  models        = "Qwen/Qwen2.5-Coder-32B-Instruct, meta-llama/Llama-3.1-8B-Instruct, mistralai/Mistral-Nemo-Instruct-2407, Qwen/Qwen2.5-72B-Instruct"
+  
+  fallback_to        = "smollm" # ← last in chain, no further fallback
+  [LLM_PROVIDER.huggingface_END]
+
+  # ── Add more LLM providers below ──────────────────────────────────────────
+  # [LLM_PROVIDER.mistral]
+  # active            = "false"
+  # base_url          = "https://api.mistral.ai/v1"
+  # env_key           = "MISTRAL_API_KEY"
+  # default_model     = "mistral-large-latest"
+  # models            = "mistral-large-latest, mistral-small-latest"
+  # fallback_to       = ""
+  # [LLM_PROVIDER.mistral_END]
+
+  # [LLM_PROVIDER.openai]
+  # active            = "false"
+  # base_url          = "https://api.openai.com/v1"
+  # env_key           = "OPENAI_API_KEY"
+  # default_model     = "gpt-4o"
+  # models            = "gpt-4o, gpt-4o-mini, gpt-3.5-turbo"
+  # fallback_to       = ""
+  # [LLM_PROVIDER.openai_END]
+
+[LLM_PROVIDERS_END]
+
+# ── Search Providers ───────────────────────────────────────────────────────────
+[SEARCH_PROVIDERS]
+
+  [SEARCH_PROVIDER.brave]
+  active              = "true"
+  base_url            = "https://api.search.brave.com/res/v1/web/search"
+  env_key             = "BRAVE_API_KEY"           # → .env: BRAVE_API_KEY=BSA...
+  default_results     = "5"
+  max_results         = "20"
+  fallback_to         = "tavily"
+  [SEARCH_PROVIDER.brave_END]
+
+  [SEARCH_PROVIDER.tavily]
+  active              = "true"
+  base_url            = "https://api.tavily.com/search"
+  env_key             = "TAVILY_API_KEY"          # → .env: TAVILY_API_KEY=tvly-...
+  default_results     = "5"
+  max_results         = "10"
+  include_answer      = "true"                    # AI-synthesized answer
+  fallback_to         = ""
+  [SEARCH_PROVIDER.tavily_END]
+
+  # ── Add more search providers below ───────────────────────────────────────
+  # [SEARCH_PROVIDER.serper]
+  # active            = "false"
+  # base_url          = "https://google.serper.dev/search"
+  # env_key           = "SERPER_API_KEY"
+  # fallback_to       = ""
+  # [SEARCH_PROVIDER.serper_END]
+
+[SEARCH_PROVIDERS_END]
+
+# ── Web / Action Providers (Webhooks, Bots, Social) ───────────────────────────
+# [WEB_PROVIDERS]
+
+  # [WEB_PROVIDER.discord]
+  # active            = "false"
+  # base_url          = "https://discord.com/api/v10"
+  # env_key           = "BOT_TOKEN"
+  # [WEB_PROVIDER.discord_END]
+
+  # [WEB_PROVIDER.github]
+  # active            = "false"
+  # base_url          = "https://api.github.com"
+  # env_key           = "GITHUB_TOKEN"
+  # [WEB_PROVIDER.github_END]
+
+# [WEB_PROVIDERS_END]
+
+[PROVIDERS_END]
+
+# =============================================================================
+# MODELS — Token & rate limits per model
+# Parser builds: MODELS[provider][model_name] → limits dict
+# COSTS: cost_*-Zeilen sind seit v1.1 OPTIONAL — [PRICING] füllt sie automatisch
+# aus OpenRouter + LiteLLM nach (OR markiert nie auf: per-Token = Vendor-
+# Listenpreis; ~5.5% Gebühr fällt nur beim Kredit-Kauf an, nicht pro Token).
+# Deine manuellen cost_* gewinnen IMMER als Override — sinnvoll für eigene
+# Deployments (smollm = 0.0, weil eigener Server) und Sonderkonditionen.
+# =============================================================================
+[MODELS]
+
+  [MODEL.claude-opus-4-6]
+  provider            = "anthropic"
+  context_tokens      = "200000"
+  max_output_tokens   = "32000"
+  requests_per_min    = "5"
+  requests_per_day    = "300"
+  capabilities        = "text, code, analysis, vision"
+  [MODEL.claude-opus-4-6_END]
+
+  [MODEL.claude-sonnet-4-6]
+  provider            = "anthropic"
+  context_tokens      = "200000"
+  max_output_tokens   = "16000"
+  requests_per_min    = "50"
+  requests_per_day    = "1000"
+  capabilities        = "text, code, analysis, vision"
+  [MODEL.claude-sonnet-4-6_END]
+
+  [MODEL.claude-haiku-4-5-20251001]
+  provider            = "anthropic"
+  context_tokens      = "200000"
+  max_output_tokens   = "8000"
+  requests_per_min    = "50"
+  requests_per_day    = "2000"
+  capabilities        = "text, code, fast"
+  [MODEL.claude-haiku-4-5-20251001_END]
+
+  [MODEL.gemini-3.1-flash-lite-preview]
+  provider            = "gemini"
+  context_tokens      = "1000000"
+  max_output_tokens   = "8192"
+  requests_per_min    = "15"
+  requests_per_day    = "1000"
+  capabilities        = "text, code, vision, fast, cheap"
+  [MODEL.gemini-3.1-flash-lite-preview_END]
+
+  [MODEL.gemini-3-flash-preview]
+  provider            = "gemini"
+  context_tokens      = "1000000"
+  max_output_tokens   = "8192"
+  requests_per_min    = "10"
+  requests_per_day    = "1000"
+  capabilities        = "text, code, vision, audio, frontier"
+  [MODEL.gemini-3-flash-preview_END]
+
+  [MODEL.gemini-3.1-pro-preview]
+  provider            = "gemini"
+  context_tokens      = "1000000"
+  max_output_tokens   = "64000"
+  requests_per_min    = "5"
+  requests_per_day    = "1000"
+  capabilities        = "text, code, vision, audio, reasoning, agents"
+  [MODEL.gemini-3.1-pro-preview_END]
+
+  [MODEL.gemini-2.5-flash]
+  provider            = "gemini"
+  context_tokens      = "1000000"
+  max_output_tokens   = "8192"
+  requests_per_min    = "15"
+  requests_per_day    = "1500"
+  capabilities        = "text, code, vision, audio"
+  [MODEL.gemini-2.5-flash_END]
+
+  [MODEL.gemini-2.5-flash-lite]
+  provider            = "gemini"
+  context_tokens      = "1000000"
+  max_output_tokens   = "8192"
+  requests_per_min    = "15"
+  requests_per_day    = "1500"
+  capabilities        = "text, code, vision, audio"
+  [MODEL.gemini-2.5-flash-lite_END]
+
+
+  [MODEL.gemini-2.0-flash]
+  provider            = "gemini"
+  context_tokens      = "1000000"
+  max_output_tokens   = "8192"
+  requests_per_min    = "15"
+  requests_per_day    = "1500"
+  capabilities        = "text, code, vision, audio"
+  [MODEL.gemini-2.0-flash_END]
+
+  
+  [MODEL.mistral-7b-instruct]
+  provider            = "openrouter"
+  context_tokens      = "32000"
+  max_output_tokens   = "4096"
+  requests_per_min    = "60"
+  requests_per_day    = "10000"
+  capabilities        = "text, code, fast, cheap"
+  [MODEL.mistral-7b-instruct_END]
+  
+  [MODEL.dolphin-mistral-24b-venice-edition]
+  provider            = "openrouter"
+  context_tokens      = "32768"
+  max_output_tokens   = "4096"
+  requests_per_min    = ""
+  requests_per_day    = ""
+  capabilities        = "uncensored, text, code, fast, very cheap"
+  [MODEL.dolphin-mistral-24b-venice-edition_END]
+
+  [MODEL.nvidia-nemotron-nano-9b-v2]
+  provider            = "openrouter"
+  context_tokens      = "131072"
+  max_output_tokens   = "4096"
+  requests_per_min    = ""
+  requests_per_day    = ""
+  capabilities        = "text, code, reasoning, fast, free"
+  [MODEL.nvidia-nemotron-nano-9b-v2_END]
+
+  [MODEL.gemma-3-27b-it]
+  provider            = "openrouter"
+  context_tokens      = "131072"
+  max_output_tokens   = "8192"
+  requests_per_min    = ""
+  requests_per_day    = ""
+  capabilities        = "text, code, vision, multilingual, free"
+  [MODEL.gemma-3-27b-it_END]
+
+  [MODEL.gpt-oss-20b]
+  provider            = "openrouter"
+  context_tokens      = "128000"
+  max_output_tokens   = "4096"
+  requests_per_min    = ""
+  requests_per_day    = ""
+  capabilities        = "text, code, free"
+  [MODEL.gpt-oss-20b_END]
+
+  [MODEL.deephermes-3-llama-3-8b-preview]
+  provider            = "openrouter"
+  context_tokens      = "131072"
+  max_output_tokens   = "4096"
+  requests_per_min    = ""
+  requests_per_day    = ""
+  capabilities        = "text, code, reasoning, uncensored, free"
+  [MODEL.deephermes-3-llama-3-8b-preview_END]
+
+  [MODEL.Mistral-7B-Instruct-v0.3]
+  provider            = "openrouter"
+  context_tokens      = "32768"
+  max_output_tokens   = "4096"
+  requests_per_min    = "60"
+  requests_per_day    = "10000"
+  capabilities        = "text, code, fast, cheap"
+  [MODEL.Mistral-7B-Instruct-v0.3_END]
+
+  [MODEL.Llama-3.3-70B-Instruct]
+  provider            = "openrouter"
+  context_tokens      = "131072"
+  max_output_tokens   = "8192"
+  requests_per_min    = "60"
+  requests_per_day    = "10000"
+  capabilities        = "text, code, reasoning, multilingual"
+  [MODEL.Llama-3.3-70B-Instruct_END]
+
+  # customs llms
+  [MODEL.smollm2-360m]
+  provider           = "smollm"
+  context_tokens     = "8192"
+  max_output_tokens  = "300"
+  requests_per_min   = "60"
+  requests_per_day   = "10000"
+  cost_input_per_1k  = "0.00000"
+  cost_output_per_1k = "0.00000"
+  capabilities       = "text, assistant, navigation, free, local"
+  [MODEL.smollm2-360m_END]
+
+  [MODEL.codey-lab/model.universal-mcp-hub]
+  provider           = "smollm"
+  context_tokens     = "8192"
+  max_output_tokens  = "300"
+  requests_per_min   = "60"
+  requests_per_day   = "10000"
+  cost_input_per_1k  = "0.00000"
+  cost_output_per_1k = "0.00000"
+  capabilities       = "text, assistant, navigation, free, custom, finetuned"
+  [MODEL.codey-lab/model.universal-mcp-hub_END]
+
+[MODELS_END]
+
+# =============================================================================
+# TOOLS — Tool definitions + provider mapping
+# Tools are registered in mcp.py only if their provider ENV key exists!
+# =============================================================================
+[TOOLS]
+
+  [TOOL.llm_complete]
+  active              = "true"
+  description         = "Send prompt to any configured LLM provider"
+  provider_type       = "llm"
+  default_provider    = "anthropic"
+  timeout_sec         = "60"
+  system_prompt       = "You are a helpful assistant integrated into the Universal MCP Hub. Answer concisely and only what is asked."
+  [TOOL.llm_complete_END]
+
+  [TOOL.code_review]
+  active              = "true"
+  description         = "Review code for bugs, security issues and improvements"
+  provider_type       = "llm"
+  default_provider    = "anthropic"
+  timeout_sec         = "60"
+  system_prompt       = "You are an expert code reviewer. Analyze the given code for bugs, security issues, and improvements. Be specific and concise."
+  [TOOL.code_review_END]
+
+  [TOOL.summarize]
+  active              = "true"
+  description         = "Summarize text into concise bullet points"
+  provider_type       = "llm"
+  default_provider    = "gemini"
+  timeout_sec         = "30"
+  system_prompt       = "You are a summarization expert. Summarize the given text in 3-5 bullet points. Be concise and accurate."
+  [TOOL.summarize_END]
+
+  [TOOL.translate]
+  active              = "true"
+  description         = "Translate text — auto-detects source language"
+  provider_type       = "llm"
+  default_provider    = "gemini"
+  timeout_sec         = "30"
+  system_prompt       = "You are a professional translator. Translate the given text accurately. Auto-detect the source language. Output only the translation, no explanation."
+  [TOOL.translate_END]
+
+  [TOOL.web_search]
+  active              = "true"
+  description         = "Search the web via configured search provider"
+  provider_type       = "search"
+  default_provider    = "brave"
+  timeout_sec         = "30"
+  [TOOL.web_search_END]
+
+  [TOOL.db_query]
+  active              = "true"
+  description         = "Execute SELECT queries on connected database (read-only)"
+  provider_type       = "db"
+  readonly            = "true"
+  timeout_sec         = "10"
+  [TOOL.db_query_END]
+
+  [TOOL.persist_result]
+  active           = "true"
+  description      = "Persist important results to long-term memory (PostgreSQL) — restart-safe queue in SQLite, flushes automatically"
+  provider_type    = "persist"
+  state_read_key   = ""          # welcher hub_state Key → leer = prompt direkt
+  target_table     = "hub_results"
+  timeout_sec      = "10"
+  # score-Parameter (optional, float) = reservierter Slot fuer den
+  # Bullshit-Filter — wird unverarbeitet durchgereicht und landet als
+  # eigene Spalte in PostgreSQL. Filter/Scoring baust DU, nicht der Hub.
+  [TOOL.persist_result_END]
+
+  # ── Future tools ──────────────────────────────────────────────────────────
+  # [TOOL.image_gen]
+  # active            = "false"
+  # description       = "Generate images via configured provider"
+  # provider_type     = "image"
+  # default_provider  = ""
+  # timeout_sec       = "120"
+  # [TOOL.image_gen_END]
+
+  # [TOOL.code_exec]
+  # active            = "false"
+  # description       = "Execute sandboxed code snippets"
+  # provider_type     = "sandbox"
+  # timeout_sec       = "30"
+  # [TOOL.code_exec_END]
+
+  # ── Shellmaster 2.0 ──────────────────────────────────────────────────────────
+  # SECURITY LEVEL: ROT — dein CLI-Commander. LLM generiert → Hardblock+
+  # Registry-Check → DEINE Bestätigung → Ausführung auf DEINEM lokalen
+  # Rechner (Agent :5004). NUR lokal — NIEMALS auf öffentlichen HF Spaces
+  # aktivieren! Token gehört in .env (shellmaster_env_key), nicht hierher.
+  [TOOL.shellmaster]
+  active                       = "false"
+  shellmaster_agent_url        = "http://localhost:5004"
+  shellmaster_env_key          = "SHELLMASTER_TOKEN"   # → .env, wie bei allen Providern
+  shellmaster_token            = ""                    # Fallback nur für lokale Tests
+  description                  = "AI-powered shell assistant — generates and executes safe shell commands"
+  provider_type                = "llm"
+  default_provider             = "smollm"
+  timeout_sec                  = "30"
+  shellmaster_commands_file    = "shellmaster_commands.jsonl"
+  shellmaster_commands_dataset = ""
+  shellmaster_customs_model    = ""
+  system_prompt                = "You are ShellMaster. Generate safe shell commands for the requested task. Output ONLY valid JSON: {\"command\": \"cmd here\", \"backup\": \"backup cmd or empty\", \"recovery\": \"recovery cmd or empty\", \"risk\": \"low|medium|high\"}"
+  [TOOL.shellmaster_END]
+
+  [TOOL.shellmaster_confirm]
+  active      = "false"
+  description = "Confirm and execute the last ShellMaster command — runs backup first"
+  [TOOL.shellmaster_confirm_END]
+
+  [TOOL.shellmaster_recover]
+  active      = "false"
+  description = "Execute recovery plan for last ShellMaster command"
+  [TOOL.shellmaster_recover_END]
+
+  [TOOL.shellmaster_commands]
+  active      = "false"
+  description = "List allowed ShellMaster commands from registry"
+  [TOOL.shellmaster_commands_END]
+
+[TOOLS_END]
+
+# =============================================================================
+# DB_SYNC — Internal SQLite config for app/* IPC
+# This is NOT the cloud DB — that lives in .env → DATABASE_URL
+# =============================================================================
+[DB_SYNC]
+SQLITE_PATH         = "app/.hub_state.db"       # internal state, never commit!
+SYNC_INTERVAL_SEC   = "30"                       # how often to flush to SQLite
+MAX_CACHE_ENTRIES   = "1000"
+PERSIST_QUEUE_MAX   = "500"                      # restart-safe queue: SQLite → PostgreSQL
+PERSIST_FLUSH_INTERVAL_SEC = "60"                # retry interval for the PG flusher
+[DB_SYNC_END]
+
+# =============================================================================
+# PRICING — Auto model costs (OpenRouter + LiteLLM)
+# WHY: not every provider has a pricing API (Anthropic/Google: none).
+# These two public sources fill cost_input_per_1k / cost_output_per_1k
+# automatically. Your [MODELS] values ALWAYS win as override.
+# Cache lives in db_sync hub_state, TTL-gated (default 24h).
+# =============================================================================
+[PRICING]
+PRICING_ENABLED       = "true"
+PRICING_TTL_HOURS     = "24"
+OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
+LITELLM_PRICES_URL    = "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
+[PRICING_END]
+
+# =============================================================================
+# DEBUG — app/* debug behavior (fundaments debug stays in .env)
+# NOTE (v1.1.0): This section is NOT YET WIRED — no app/* code reads it.
+# Real debug switches live in .env: PYFUNDAMENTS_DEBUG / LOG_LEVEL /
+# LOG_TO_TMP / ENABLE_PUBLIC_LOGS (see example-mcp___.env).
+# Defaults below are SAFE (OFF) so wiring this later cannot leak data.
+# =============================================================================
+[DEBUG]
+DEBUG               = "OFF"                       # ON | OFF (not wired yet)
+DEBUG_LEVEL         = "WARN"                      # FULL | WARN | ERROR (not wired yet)
+LOG_FILE            = "hub_debug.log"             # (not wired yet)
+LOG_REQUESTS        = "false"                     # (not wired yet)
+LOG_RESPONSES       = "false"                     # (not wired yet — would log sensitive data!)
+[DEBUG_END]
+
+# =============================================================================
+# PARSER_PROVIDER FREE ENDPOINTS — soon
+# =============================================================================
+[PARSER_PROVIDER]
+#[PARSER_PROVIDER.metaculus]
+#active    = "true"
+#base_url  = "https://www.metaculus.com/api2"
+#env_key   = ""          # public API, kein key!
+#category  = "research"
+#legal_de  = "true"      # ← Deutschland-Check direkt in config!
+#[PARSER_PROVIDER.metaculus_END]
+
+#[PARSER_PROVIDER.polymarket]
+#active    = "false"
+#base_url  = "https://gamma-api.polymarket.com"
+#env_key   = ""
+#legal_de  = "false"
+#[PARSER_PROVIDER.polymarket_END]
+[PARSER_PROVIDER_END]
+
