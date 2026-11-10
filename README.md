@@ -549,4 +549,7 @@ By using this software you agree to all ethical constraints defined in ESOL v2.1
 *Built with Claude (Anthropic) GLM as a typing assistant for docs (and the occasional bug) after i brick my hole work after i made it to complex*
 
 > crafted with passion — just wanted to understand how it works, don't actually need it, have a CLI 😄
+>
+> 
+> README.md craftet by gemini or glm or claude i dont know mean itswrong! later reeal, read code thats important not the readme! 
 
