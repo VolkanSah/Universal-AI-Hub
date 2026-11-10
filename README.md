@@ -1,3 +1,4 @@
+---
 title: Universal AI Hub
 emoji: 🛡️
 colorFrom: indigo
@@ -7,6 +8,8 @@ pinned: true
 license: apache-2.0
 short_description: Secure Multi-HUB i craft since month
 ---
+
+# Universal AI Hub 🛡️
 
 # Universal AI Hub 🛡️
 
