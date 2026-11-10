@@ -1,12 +1,12 @@
 ---
-title: Multi-LLM API Gateway
+title: Universal AI Hub
 emoji: 🛡️
 colorFrom: indigo
 colorTo: red
 sdk: docker
 pinned: true
 license: apache-2.0
-short_description: Secure Multi-LLM Gateway — (Streamable HTTP / SSE)
+short_description: Secure Multi-HUB i craft since month
 ---
 
 ### my Universal AI Hub (Sandboxed)
