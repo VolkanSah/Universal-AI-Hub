@@ -74,3 +74,36 @@
 2026-11-10 15:41:49,877 - hypercorn.error - INFO - Running on http://0.0.0.0:7860 (CTRL + C to quit)
 2026-11-10 15:41:50,021 - pricing - INFO - Pricing source OpenRouter: 465 models.
 2026-11-10 15:41:50,114 - pricing - INFO - Pricing source LiteLLM: 4618 models.
+
+
+
+ca 60 minuten? ok shutdown, perfect aber reconect kackt ab! 
+
+2026-11-10 16:28:21,675 - asyncpg.pool - WARNING - Failed to restore the pool connection floor; retrying
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.10/site-packages/asyncpg/connection.py", line 2498, in connect
+    return await connect_utils._connect(
+  File "/usr/local/lib/python3.10/site-packages/asyncpg/connect_utils.py", line 1278, in _connect
+    conn = await _connect_addr(
+  File "/usr/local/lib/python3.10/site-packages/asyncpg/connect_utils.py", line 1088, in _connect_addr
+    return await __connect_addr(params, False, *args)
+  File "/usr/local/lib/python3.10/site-packages/asyncpg/connect_utils.py", line 1173, in __connect_addr
+    await connected
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.10/site-packages/asyncpg/pool.py", line 564, in _maintain_min_size
+    await holder.connect()
+  File "/usr/local/lib/python3.10/site-packages/asyncpg/pool.py", line 172, in connect
+    con = await self._pool._get_new_connection()
+  File "/usr/local/lib/python3.10/site-packages/asyncpg/pool.py", line 655, in _get_new_connection
+    con = await self._connect(
+  File "/usr/local/lib/python3.10/site-packages/asyncpg/connection.py", line 2497, in connect
+    async with compat.timeout(timeout):
+  File "/usr/local/lib/python3.10/site-packages/async_timeout/__init__.py", line 179, in __aexit__
+    self._do_exit(exc_type)
+  File "/usr/local/lib/python3.10/site-packages/async_timeout/__init__.py", line 265, in _do_exit
+    raise asyncio.TimeoutError
+asyncio.exceptions.TimeoutError
