@@ -35,7 +35,7 @@ No key → no tool → no crash → no exposed secrets
 
 ---
 
-<details open>
+<details>
 <summary><b>🧠 Usernote: how this was actually built (no vibecode — or am I lying? 😄)</b></summary>
 
 I wrote this myself. And I broke myself doing it — properly. Not "my code doesn't run" broken, but "I've been staring at my own architecture for months and my brain is soup" broken. At that point AI stepped in — not to write my project, but to help me untangle my thoughts and shape what was already in my head.
@@ -46,7 +46,9 @@ Is that vibecoding? **No.** Vibecoding is shipping code you don't understand and
 
 </details>
 
-<details open>
+---
+
+<details>
 <summary><b>🆕 What's new in v1.2.0 — memory that survives a reboot</b></summary>
 
 > Full changelog (with proof) in [`REVIEW.md`](REVIEW.md). The short version, my words:
@@ -70,6 +72,8 @@ Is that vibecoding? **No.** Vibecoding is shipping code you don't understand and
 </details>
 </details>
 
+--- 
+
 <details>
 <summary><b>❓ Why this exists</b></summary>
 
@@ -85,6 +89,8 @@ This hub is the antidote:
 - **Single source of truth** — All tool/provider/model config lives in `app/.pyfun`. Adding a provider = edit one file. No code changes.
 
 </details>
+
+--- 
 
 <details>
 <summary><b>🔌 Two interfaces — one server</b></summary>
@@ -123,6 +129,8 @@ HUB_TRANSPORT = "streamable-http"   # default — MCP spec 2025-11-25
 Auth, rate limiting and logging can all hook into the `/mcp` route in `app/app.py` before a request ever reaches FastMCP.
 
 </details>
+
+---
 
 <details>
 <summary><b>🏗 Architecture — the sandbox is structural</b></summary>
@@ -174,6 +182,9 @@ This isn't documentation. It's enforced by the import structure.
 
 </details>
 
+
+---
+
 <details>
 <summary><b>💾 Memory — short-term, long-term, and my filter (v1.2.0)</b></summary>
 
@@ -208,6 +219,8 @@ PostgreSQL hub_results        ← (id, created_at, source, model, score, payload
 | `hub_results` | PostgreSQL / Guardian | via `persist_result` → queue → flusher |
 
 </details>
+
+---
 
 <details>
 <summary><b>🧰 Tools — no key, no tool, server still starts</b></summary>
@@ -251,6 +264,8 @@ Future hooks (commented, ready): `image_gen`, `code_exec`, ShellMaster 2.0 (ROT 
 
 </details>
 
+---
+
 <details>
 <summary><b>🔁 Fallback chain</b></summary>
 
@@ -273,6 +288,9 @@ fallback_to = "openrouter"
 Same pattern applies to search providers (`brave → tavily`).
 
 </details>
+
+--- 
+
 
 <details open>
 <summary><b>🚀 Quick start</b></summary>
@@ -313,6 +331,9 @@ HUB_SPACE_URL=""
 Transport is configured in `app/.pyfun [HUB]` — not via ENV.
 
 </details>
+
+---
+
 
 <details>
 <summary><b>🔗 Connect an MCP client</b></summary>
@@ -362,6 +383,10 @@ Transport is configured in `app/.pyfun [HUB]` — not via ENV.
 
 </details>
 
+
+---
+
+
 <details>
 <summary><b>🖥 Desktop client (experimental — ~80 % me, 20 % typing assistant)</b></summary>
 
@@ -390,6 +415,8 @@ python DESKTOP_CLIENT/hub.py
 
 </details>
 
+---
+
 <details>
 <summary><b>🧩 CMS & custom clients</b></summary>
 
@@ -402,6 +429,10 @@ python DESKTOP_CLIENT/hub.py
 | Cursor / Windsurf | MCP `/mcp` | Streamable HTTP |
 
 </details>
+
+
+---
+
 
 <details>
 <summary><b>⚙️ Configuration (.pyfun) — one file to rule the app</b></summary>
@@ -450,6 +481,10 @@ _PROVIDER_CLASSES = {
 
 </details>
 
+
+---
+
+
 <details>
 <summary><b>📦 Dependencies</b></summary>
 
@@ -479,6 +514,10 @@ requests         — sync HTTP for tool workers
 
 </details>
 
+
+---
+
+
 <details>
 <summary><b>🛡 Security design</b></summary>
 
@@ -496,6 +535,9 @@ requests         — sync HTTP for tool workers
 [→ Full Security Policy](SECURITY.md)
 
 </details>
+
+
+---
 
 <details>
 <summary><b>🧱 Foundation: PyFundaments</b></summary>
@@ -518,6 +560,10 @@ None accessible from `app/*`. Injected as a validated dict by `main.py`.
 
 </details>
 
+
+---
+
+
 <details>
 <summary><b>📜 History & related projects</b></summary>
 
@@ -531,15 +577,16 @@ Related:
 
 </details>
 
+---
+
+
 <details>
-<summary><b>⚖️ License — Apache 2.0 + ESOL, both mandatory</b></summary>
+<summary><b>⚖️ License — Multi-License & ESOL (mandatory)</b></summary>
 
-Dual-licensed:
+- Projekt GNU Affero General Public License v3.0 [see License](https://www.gnu.org/licenses/agpl-3.0.html) + Ethical Security Operations License v2.1 [see License](ESOL) — mandatory, non-severable
+- Some scripts i made Apache License 2.0 [see License](https://www.apache.org/licenses/LICENSE-2.0) + GNU General Public License v3.0 [see License](https://www.gnu.org/licenses/gpl-3.0.html) + MIT License [see License](https://opensource.org/licenses/MIT) (only for as for examples, some skills and agents public on MIT or other open source license i use here in this hub for showcases, see files for more infos)
 
-- [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0)
-- [Ethical Security Operations License v1.1 (ESOL)](ESOL) — mandatory, non-severable
-
-By using this software you agree to all ethical constraints defined in ESOL v2.1.
+##### By using this software you agree to all ethical constraints defined in ESOL v2.1.
 
 </details>
 
@@ -550,5 +597,5 @@ By using this software you agree to all ethical constraints defined in ESOL v2.1
 
 > crafted with passion - just wanted to understand how it works, don't actually need it, have a CLI 😄
 > 
-> README.md craftet (rewritten) by gemini 3 Pro
+> README.md craftet (rewritten) by gemini 3 Pro , fixed by me, looks terrible i know! AI slop from claude, geminie and me! Soon better i sewar! 
 
