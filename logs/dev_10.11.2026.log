@@ -19,12 +19,19 @@
 2026-11-10 10:35:05,760 - pyfundaments_debug - INFO - ==== PYFUNDAMENTS DEBUG END ====
 2026-11-10 10:35:05,761 - main_app_loader - INFO - Starting main.py...
 2026-11-10 10:35:05,761 - main_app_loader - INFO - Starting conditional initialization of fundament modules...
-2026-11-10 10:35:05,761 - main_app_loader - INFO - No valid DATABASE_URL found, skipping database initialization.
+2026-11-10 10:35:05,761 - main_app_loader - INFO - No valid DATABASE_URL found, skipping database initialization. 
 2026-11-10 10:35:05,761 - main_app_loader - INFO - Encryption keys not found or using defaults, skipping encryption initialization.
 2026-11-10 10:35:05,761 - main_app_loader - INFO - No database available, skipping Access Control initialization.
 2026-11-10 10:35:05,793 - main_app_loader - INFO - User Handler service initialized (SQLite store).
+--------------------------------------------------------------------------------------------------------------
 2026-11-10 10:35:05,794 - security - CRITICAL - Security manager init failed: AccessControl service missing.
+                    > -------- note to my self!  --- need recheck - if fail recheck :  if DB_URL set > recheck wrong pswd, or no db on url, Access Control and  security.py only needed for PSQL_DB USE
+
 2026-11-10 10:35:05,794 - main_app_loader - WARNING - Security manager initialization failed: AccessControl service missing
+
+--------------------------------------------------------------------------------------------------------------
+
+
 2026-11-10 10:35:05,794 - main_app_loader - INFO - Successfully initialized services: config, user_handler
 2026-11-10 10:35:05,794 - main_app_loader - INFO - Fundament modules are ready for the app logic.
 2026-11-10 10:35:06,198 - application - INFO - Application starting...
