@@ -1,4 +1,3 @@
-```markdown
 title: Universal AI Hub
 emoji: 🛡️
 colorFrom: indigo
