@@ -11,6 +11,8 @@ short_description: Secure Multi-HUB i craft since month
 
 # Universal AI Hub 🛡️
 
+> stabe and secure but not 101 % still testing!
+
 - or **Multi-LLM API Gateway**
 - or secure AI wrapper with dual interface: REST + MCP
 
