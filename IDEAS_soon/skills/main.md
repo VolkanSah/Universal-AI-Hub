@@ -108,6 +108,9 @@ Use these tags to map execution directly to hub tools and specialized workflows.
 **`[MODE: PERSIST]`** - State persistence and memory queuing (`persist_result`)  
 > Queue-safe memory orchestration and state storage.
 
+**`[MODE: SHELLMASTER]`** - Sandboxed ShellMaster tool suite execution (`shellmaster`)  
+> Execute validated local CLI commands via secured agent interface with strict hardblock checks and mandatory user confirmation flows.
+
 ---
 
 ## WHAT I NEVER WANT TO SEE
