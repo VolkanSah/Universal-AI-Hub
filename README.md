@@ -9,12 +9,11 @@ license: apache-2.0
 short_description: Secure Multi-HUB i craft since month
 ---
 
+
+
 # Universal AI Hub 🛡️
+> 🚧 **Status:** Under active development. Built strictly for private spaces with hardened anti-spam and anti-scammer guardrails. Use at your own discretion.
 
-> stabe and secure but not 101 % still testing!
-
-- or **Multi-LLM API Gateway**
-- or secure AI wrapper with dual interface: REST + MCP
 
 aka: a clean, secure starting point for your own projects.
 Pick the description that fits your use case. They're all correct.
