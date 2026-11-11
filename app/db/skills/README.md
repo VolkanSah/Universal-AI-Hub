@@ -5,9 +5,10 @@ tags: core
 ---
 
 # System core core  (duty!) > app/db/skills/core/*
-- core_skills: app/db/skills/core/core.db
-- `db/skills` how_to_understand:  app/db/skills/core/core_agent.db
-- `db/skills` how to understand- readable for humans: app/db/skills/core/core_agent.md
+- `core_skills`: app/db/skills/core/core.db
+- `core_skills`: how to understand- readable for humans: app/db/skills/core/core.md
+- `db/skills`: how_to_understand:  app/db/skills/core/core_agent.db
+- `db/skills`: how to understand- readable for humans: app/db/skills/core/core_agent.md
 - description: "FUCK! restrict ai slop and saves me money"
 
 # User skills > app/db/skills/user/* 
