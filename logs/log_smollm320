@@ -1,0 +1,10 @@
+===== Application Startup at 2026-11-11 21:14:21 =====
+
+2026-11-11 21:15:31,486 [INFO] main: API_KEY set — endpoint is protected
+INFO:     Started server process [1]
+INFO:     Waiting for application startup.
+2026-11-11 21:15:31,493 [INFO] main: === SmolLM2 Service starting ===
+2026-11-11 21:15:31,528 [INFO] model: HF API authenticated
+2026-11-11 21:15:31,528 [INFO] main: Model config: {'token': 'set', 'model_repo': 'HuggingFaceTB/SmolLM2-360M-Instruct', 'private_model': 'codey-lab/model.universal-mcp-hub', 'dataset_repo': 'codey-lab/data.universal-mcp-hub', 'hf_api': 'authenticated'}
+2026-11-11 21:15:31,995 [INFO] model: Using private model: codey-lab/model.universal-mcp-hub
+2026-11-11 21:15:31,999 [INFO] smollm: Loading codey-lab/model.universal-mcp-hub on cpu...
