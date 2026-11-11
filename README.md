@@ -561,29 +561,33 @@ None accessible from `app/*`. Injected as a validated dict by `main.py`.
 
 ---
 
-<details><summary><b>🛤️ Roadmap/b></summary>
+<details><summary><b>🛤️ Roadmap</b></summary>
 
 ## haha that's good!
-[x] 10 months before...
-[x] some blackouts
-[x] more blackouts
-[x] ... month 6 WTF... runs but only stupid secure LLM wrapper and tools...
-[x] ... pff brick again!
-[x] ... fuck!
-[x] ... rewrite
-[x] fuck Neon DB + MCP changes secure stuff! fuck
-[x] rewritten
-[x] GLM checked it, stupid guy! but finds 2 hidden design bugs, no execution but stupid fail!
-[x] Claude checks again and again and again, my 5 hours limit used in 1.23 min. A record of my self, normally need 2 minutes
-[x] wtf, fuck you Claude, fuck you Gemini, fuck you GLM, fuck you Kimi, fuck you DeepSeek, all others I do not use
-[x] fuck! but runs again! I see my first instinct was the best, AI made me crazy!
-[x] new rewrite with Claude Sonnet, first kick this asshole in his fucking balls 12 times! I get poor bitch!
-[x] it runs...
-[x] Fuck yeah, stable fast, secure and against scammers! only for privates!
-[x] fail architecture for vibecoders!
-[x] README AI slop from AI with a fucking touch of me!
-[] features... see code!
-- 
+- [x] 10 months before...
+- [x] some blackouts
+- [x] more blackouts
+- [x] ... month 6 WTF... runs but only stupid secure LLM wrapper and tools...
+- [x] ... pff brick again!
+- [x] ... fuck!
+- [x] ... rewrite
+- [x] fuck Neon DB + MCP changes secure stuff! fuck
+- [x] rewritten
+- [x] GLM checked it, stupid guy! but finds 2 hidden design bugs, no execution but stupid fail!
+- [x] Claude checks again and again and again, my 5 hours limit used in 1.23 min. A record of my self, normally need 2 minutes
+- [x] wtf, fuck you Claude, fuck you Gemini, fuck you GLM, fuck you Kimi, fuck you DeepSeek, all others I do not use
+- [x] fuck! but runs again! I see my first instinct was the best, AI made me crazy!
+- [x] new rewrite with Claude Sonnet, first kick this asshole in his fucking balls 12 times! I get poor bitch!
+- [x] it runs...
+- [x] Fuck yeah, stable fast, secure and against scammers! only for privates!
+- [x] fail architecture for vibecoders!
+- [x] README AI slop from AI with a fucking touch of me!
+- [x] conditional initialization of fundament modules...
+- [x] Fundament modules are ready for the app logic.
+- [x] PostgreSQL bridge activ
+- [x] ShellMaster & Discord API not 100 % finished!
+- [X] tools an´d stiff.. later to much yet!
+- [ ] some futers.. still crafting
      
 </details>
 
