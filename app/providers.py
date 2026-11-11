@@ -1,6 +1,6 @@
 # =============================================================================
 # app/providers.py
-# 09.03.2026 | updated 23.03.2026
+# 09.03.2026 | updated 23.03.2026 | reworked 10.11.2026
 # LLM + Search Provider Registry + Fallback Chain
 # Universal MCP Hub (Sandboxed) - based on PyFundaments Architecture
 # Copyright 2026 - Volkan Kücükbudak
@@ -15,12 +15,33 @@
 # PROVIDER PRINCIPLE:
 #   No key = no provider = no tool = no crash.
 #   Server always starts, just with fewer providers.
-#   Adding a new provider = update .pyfun + add class here. Never touch mcp.py!
+#
+# HOW TO ADD A NEW LLM PROVIDER:
+#   OpenAI-compatible API (Mistral, OpenAI, xAI, Groq, Together, DeepSeek, ...):
+#       → ONLY a [LLM_PROVIDER.xyz] block in app/.pyfun with type = "openai_compat"
+#         + the key in .env. NO code needed. See examples in .pyfun.
+#   Different API format (like Anthropic / Gemini):
+#       1. Add a class below (subclass BaseProvider, implement complete())
+#       2. Register it in _TYPE_CLASSES
+#       3. Add the [LLM_PROVIDER.xyz] block in .pyfun with type = "<your type>"
 #
 # FALLBACK CHAIN:
 #   Defined in .pyfun per provider via fallback_to field.
 #   anthropic → fails → gemini → fails → openrouter → fails → RuntimeError
 #   Visited set prevents infinite loops.
+#   A model chosen explicitly applies to the FIRST provider only — every
+#   fallback provider uses its own default_model (model IDs are provider-specific).
+#
+# LIMITS (from .pyfun [HUB_LIMITS]):
+#   MAX_PARALLEL_REQUESTS → semaphore around every provider call
+#   RETRY_COUNT / RETRY_DELAY_SEC → attempts per provider on 429/5xx/connect errors
+#                                   (timeouts are NOT retried → straight to fallback)
+#   MAX_TOKENS_CAP → hard ceiling for max_tokens per call (0 = off)
+#   Per-model max_output_tokens (manual or auto from pricing) clamps further.
+#
+# USAGE / COST:
+#   complete() returns (text, usage). llm_complete() logs usage + estimated cost
+#   into db_sync (usage_log) after every successful call. Never breaks a call.
 #
 # SECURITY NOTE:
 #   API keys are NEVER logged or included in exception messages.
@@ -28,25 +49,9 @@
 #   and safe_url (query params stripped) are ever exposed in logs.
 #
 # CACHING NOTE:
-#   Anthropic → prompt_caching (cache_control: ephemeral)
-#     Requires anthropic-beta: prompt-caching-2024-07-31 header.
-#     Caches system prompt + long user prompts (>1024 tokens estimated).
-#     Saves up to 90% input token costs on repeated context.
+#   Anthropic → prompt_caching (cache_control: ephemeral) for long system/user prompts.
 #     Enable per provider in .pyfun: supports_cache = "true"
-#
-#   Gemini → Implicit caching (automatic, no extra API call needed)
-#     Google automatically caches repeated prompt prefixes server-side.
-#     No code change needed — Gemini handles it transparently.
-#     Explicit Context Caching API exists but requires separate cache management
-#     and is only worth it for very large static contexts (32k+ tokens).
-#     Enable per provider in .pyfun: supports_cache = "true"
-#     (currently used as log hint only for Gemini — implicit cache is always on)
-#
-# HOW TO ADD A NEW LLM PROVIDER — 3 steps, nothing else to touch:
-#   1. Add class below (copy a dummy, implement complete())
-#   2. Register name → class in _PROVIDER_CLASSES dict
-#   3. Add [LLM_PROVIDER.yourprovider] block in app/.pyfun
-#      → env_key, base_url, default_model, fallback_to
+#   Gemini → implicit caching (automatic, server-side). supports_cache = log hint only.
 #
 # DEPENDENCY CHAIN (app/* only, no fundaments!):
 #   config.py    → parses app/.pyfun — single source of truth
@@ -56,12 +61,88 @@
 # =============================================================================
 
 import os
+import re
+import time
+import asyncio
 import logging
 import httpx
+from typing import Optional, Tuple, Dict, Any
 
 from . import config
+from . import models as models_mod
+from . import pricing
+from . import db_sync
+
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger("providers")
+
+
+# =============================================================================
+# SECTION 0 — Errors, Limits, Retry
+# =============================================================================
+
+class ProviderError(RuntimeError):
+    """Sanitized provider error. RuntimeError subclass → app.py maps it to 502."""
+    def __init__(self, message: str, status: Optional[int] = None):
+        super().__init__(message)
+        self.status = status
+
+
+_TRANSIENT_STATUS = {408, 425, 429, 500, 502, 503, 504, 529}
+
+
+def _limit(key: str, default, cast=int):
+    """Read one value from .pyfun [HUB_LIMITS] with safe fallback."""
+    try:
+        return cast(config.get_limits().get(key, default))
+    except (TypeError, ValueError):
+        return cast(default)
+
+
+_sem: Optional[asyncio.Semaphore] = None
+
+
+def _get_sem() -> asyncio.Semaphore:
+    """One global semaphore (MAX_PARALLEL_REQUESTS) — created lazily inside the loop."""
+    global _sem
+    if _sem is None:
+        _sem = asyncio.Semaphore(max(1, _limit("MAX_PARALLEL_REQUESTS", 5)))
+    return _sem
+
+
+def _is_transient(e: Exception) -> bool:
+    """429/5xx and connect errors are worth a retry. Timeouts are NOT (60s x N = forever)."""
+    if isinstance(e, ProviderError):
+        return e.status in _TRANSIENT_STATUS
+    return isinstance(e, httpx.ConnectError)
+
+
+async def _with_retry(name: str, call):
+    """
+    Run `call()` (async callable) under the global semaphore.
+    Attempts = RETRY_COUNT (incl. the first), flat RETRY_DELAY_SEC between them.
+    """
+    attempts = max(1, _limit("RETRY_COUNT", 3))
+    delay    = max(0.0, _limit("RETRY_DELAY_SEC", 2, float))
+    for i in range(1, attempts + 1):
+        try:
+            async with _get_sem():
+                return await call()
+        except Exception as e:
+            if i >= attempts or not _is_transient(e):
+                raise
+            logger.info(f"'{name}' transient error ({type(e).__name__}) — retry {i}/{attempts - 1} in {delay}s")
+            await asyncio.sleep(delay)
+
+
+def _usage(tokens_in: Any, tokens_out: Any) -> Dict[str, Optional[int]]:
+    """Normalize token counts to int|None."""
+    def _i(v):
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return None
+    return {"input": _i(tokens_in), "output": _i(tokens_out)}
 
 
 # =============================================================================
@@ -73,9 +154,11 @@ class BaseProvider:
     """
     Base class for all LLM providers.
     Subclasses only implement complete() — HTTP logic lives here.
+    complete() returns (text, usage) with usage = {"input": int|None, "output": int|None}.
     """
     def __init__(self, name: str, cfg: dict):
         self.name          = name
+        self.cfg           = cfg
         self.key           = os.getenv(cfg.get("env_key", ""))
         self.base_url      = cfg.get("base_url", "")
         self.fallback      = cfg.get("fallback_to", "")
@@ -89,14 +172,15 @@ class BaseProvider:
             else "***"
         )
 
-    async def complete(self, prompt: str, model: str, max_tokens: int) -> str:
+    async def complete(self, prompt: str, model: str = None, max_tokens: int = 1024,
+                       system: str = None) -> Tuple[str, Dict[str, Optional[int]]]:
         """Override in each provider subclass."""
         raise NotImplementedError
 
     async def _post(self, url: str, headers: dict, payload: dict) -> dict:
         """
         Shared HTTP POST — used by all providers.
-        Raises RuntimeError with sanitized message on non-2xx responses.
+        Raises ProviderError with sanitized message on non-2xx responses.
         API keys are never included in raised exceptions or log output.
         """
         safe_url = url.split("?")[0]  # strip query params (may contain API keys)
@@ -112,8 +196,9 @@ class BaseProvider:
                 r.raise_for_status()
             except httpx.HTTPStatusError as e:
                 # Sanitize: only status code + safe_url, never headers or body
-                raise RuntimeError(
-                    f"HTTP {e.response.status_code} from {safe_url}"
+                raise ProviderError(
+                    f"HTTP {e.response.status_code} from {safe_url}",
+                    e.response.status_code,
                 ) from None
             return r.json()
 
@@ -123,40 +208,74 @@ class BaseProvider:
 # Only the API-specific parsing logic differs per provider.
 # =============================================================================
 
-# --- SmolLM2 (Custom Assistant Space) ----------------------------------------
-class SmolLMProvider(BaseProvider):
+# --- OpenAI-compatible (GENERIC — no code needed for new providers) -----------
+class OpenAICompatProvider(BaseProvider):
     """
-    SmolLM2 Custom Assistant Space — OpenAI-compatible, ADI routing included.
-    Free tier on HF Spaces (CPU). Falls back to next provider on 503.
-    Response includes extra 'adi' field with score + decision (ignored by hub).
-    Deploy: https://github.com/VolkanSah/Multi-LLM-API-Gateway (smollm-space/)
+    Generic OpenAI-compatible /chat/completions provider.
+    Covers smollm, openrouter, huggingface, mistral, openai, xai, groq, ...
+    Everything provider-specific lives in the .pyfun block:
 
-    .pyfun block:
-        [LLM_PROVIDER.smollm]
+        [LLM_PROVIDER.mistral]
         active        = "true"
-        base_url      = "https://codey-lab-SmolLM2-customs.hf.space/v1"
-        env_key       = "SMOLLM_API_KEY"
-        default_model = "smollm2-360m"
-        models        = "smollm2-360m, codey-lab/model.universal-mcp-hub"
-        fallback_to   = "anthropic"
-        [LLM_PROVIDER.smollm_END]
+        type          = "openai_compat"
+        base_url      = "https://api.mistral.ai/v1"
+        env_key       = "MISTRAL_API_KEY"
+        default_model = "mistral-small-latest"
+        fallback_to   = ""
+        # optional:
+        # auth_header = "Authorization"   (default)
+        # auth_scheme = "Bearer"          (default; "" = send the raw key)
+        # chat_path   = "/chat/completions" (default)
+        # header.X-Foo = "{key}"          extra header; {key} = API key,
+        #                                 {env:NAME|fallback} = ENV value
+        [LLM_PROVIDER.mistral_END]
     """
+    _PLACEHOLDER = re.compile(r"\{(key|env:([A-Za-z0-9_]+)(?:\|([^}]*))?)\}")
 
-    async def complete(self, prompt: str, model: str = None, max_tokens: int = 150) -> str:
+    def __init__(self, name: str, cfg: dict):
+        super().__init__(name, cfg)
+        self.auth_header = cfg.get("auth_header", "Authorization")
+        self.auth_scheme = cfg.get("auth_scheme", "Bearer")
+        self.chat_path   = cfg.get("chat_path", "/chat/completions")
+
+    def _fill(self, value: str) -> str:
+        def sub(m):
+            if m.group(1) == "key":
+                return self.key or ""
+            return os.getenv(m.group(2)) or (m.group(3) or "")
+        return self._PLACEHOLDER.sub(sub, value)
+
+    def _headers(self) -> dict:
+        headers = {
+            self.auth_header: f"{self.auth_scheme} {self.key}".strip(),
+            "content-type":   "application/json",
+        }
+        for k, v in self.cfg.items():
+            if k.startswith("header."):
+                headers[k[len("header."):]] = self._fill(v)
+        return headers
+
+    async def complete(self, prompt: str, model: str = None, max_tokens: int = 1024,
+                       system: str = None):
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+
         data = await self._post(
-            f"{self.base_url}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {self.key}",
-                "X-IP-Token":     self.key,
-                "content-type":  "application/json",
-            },
+            f"{self.base_url}{self.chat_path}",
+            headers=self._headers(),
             payload={
                 "model":      model or self.model,
                 "max_tokens": max_tokens,
-                "messages":   [{"role": "user", "content": prompt}],
+                "messages":   messages,
             },
         )
-        return data["choices"][0]["message"]["content"]
+        text = data["choices"][0]["message"]["content"]
+        if text is None:
+            raise ProviderError("empty content in response")
+        u = data.get("usage") or {}
+        return text, _usage(u.get("prompt_tokens"), u.get("completion_tokens"))
 
 
 # --- Anthropic ----------------------------------------------------------------
@@ -166,20 +285,22 @@ class AnthropicProvider(BaseProvider):
 
     Prompt Caching (supports_cache = "true" in .pyfun):
         Uses cache_control: ephemeral on system prompt and long user prompts.
-        Requires anthropic-beta: prompt-caching-2024-07-31 header.
         Cache TTL: 5 minutes, extended on each cache hit.
         Min tokens to cache: ~1024 (Anthropic requirement).
         Cost: cache write ~25% more, cache read ~90% less than normal input.
 
+    Usage: input = input + cache_creation + cache_read tokens (upper bound for cost).
+
     .pyfun block:
         [LLM_PROVIDER.anthropic]
-        active           = "true"
-        base_url         = "https://api.anthropic.com/v1"
-        env_key          = "ANTHROPIC_API_KEY"
+        active             = "true"
+        type               = "anthropic"
+        base_url           = "https://api.anthropic.com/v1"
+        env_key            = "ANTHROPIC_API_KEY"
         api_version_header = "2023-06-01"
-        default_model    = "claude-haiku-4-5"
-        supports_cache   = "true"
-        fallback_to      = "gemini"
+        default_model      = "claude-haiku-5-5"
+        supports_cache     = "true"
+        fallback_to        = "gemini"
         [LLM_PROVIDER.anthropic_END]
     """
 
@@ -187,35 +308,26 @@ class AnthropicProvider(BaseProvider):
     _CHARS_PER_TOKEN = 4
     _CACHE_MIN_TOKENS = 1024
 
+    def __init__(self, name: str, cfg: dict):
+        super().__init__(name, cfg)
+        self.api_version = cfg.get("api_version_header", "2023-06-01")
+
     def _is_cacheable(self, text: str) -> bool:
         """Estimate if text is long enough to benefit from caching."""
         return len(text) >= self._CACHE_MIN_TOKENS * self._CHARS_PER_TOKEN
 
-    async def complete(
-        self,
-        prompt: str,
-        model: str = None,
-        max_tokens: int = 1024,
-        system: str = None,
-    ) -> str:
-        cfg = config.get_active_llm_providers().get("anthropic", {})
-
+    async def complete(self, prompt: str, model: str = None, max_tokens: int = 1024,
+                       system: str = None):
         headers = {
             "x-api-key":         self.key,
-            "anthropic-version": cfg.get("api_version_header", "2023-06-01"),
+            "anthropic-version": self.api_version,
             "content-type":      "application/json",
         }
 
-        # --- Build user content ---
-        # Add cache_control if caching enabled + prompt long enough
+        # --- Build user content (cache_control if enabled + long enough) ---
         if self.supports_cache and self._is_cacheable(prompt):
-            user_content = [
-                {
-                    "type":          "text",
-                    "text":          prompt,
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ]
+            user_content = [{"type": "text", "text": prompt,
+                             "cache_control": {"type": "ephemeral"}}]
             headers["anthropic-beta"] = "prompt-caching-2024-07-31"
             logger.debug("Anthropic: prompt cache_control applied to user message.")
         else:
@@ -230,20 +342,21 @@ class AnthropicProvider(BaseProvider):
         # --- Optional system prompt with cache_control ---
         if system:
             if self.supports_cache and self._is_cacheable(system):
-                payload["system"] = [
-                    {
-                        "type":          "text",
-                        "text":          system,
-                        "cache_control": {"type": "ephemeral"},
-                    }
-                ]
+                payload["system"] = [{"type": "text", "text": system,
+                                      "cache_control": {"type": "ephemeral"}}]
                 headers["anthropic-beta"] = "prompt-caching-2024-07-31"
                 logger.debug("Anthropic: prompt cache_control applied to system prompt.")
             else:
                 payload["system"] = system
 
         data = await self._post(f"{self.base_url}/messages", headers, payload)
-        return data["content"][0]["text"]
+        text = data["content"][0]["text"]
+        u = data.get("usage") or {}
+        tin = None
+        if u:
+            tin = sum(int(u.get(k) or 0) for k in
+                      ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
+        return text, _usage(tin, u.get("output_tokens"))
 
 
 # --- Gemini ------------------------------------------------------------------
@@ -251,222 +364,71 @@ class GeminiProvider(BaseProvider):
     """
     Google Gemini API — generateContent endpoint.
 
-    Implicit Caching (always active on Gemini side, no code needed):
-        Google automatically caches repeated prompt prefixes server-side.
-        No extra API call, no cache key, no TTL management needed.
-        Just send the same prompt structure and Gemini handles the rest.
-        supports_cache = "true" in .pyfun logs cache hint only.
-
-    Explicit Context Caching (NOT implemented here — when to use it):
-        Only worth the extra API complexity for very large static contexts
-        (32k+ tokens, e.g. large documents sent on every request).
-        Requires separate POST to /cachedContents, returns a cache_name,
-        which is then referenced in generateContent as cachedContent.name.
-        Implement as a separate tool (cache_create / cache_use) when needed.
+    Implicit Caching (always active on Gemini side, no code needed).
+    Explicit Context Caching is NOT implemented (only worth it for 32k+ static contexts).
 
     .pyfun block:
         [LLM_PROVIDER.gemini]
         active         = "true"
+        type           = "gemini"
         base_url       = "https://generativelanguage.googleapis.com/v1beta"
         env_key        = "GEMINI_API_KEY"
-        default_model  = "gemini-2.0-flash"
+        default_model  = "gemini-2.5-flash"
         supports_cache = "true"
         fallback_to    = "openrouter"
         [LLM_PROVIDER.gemini_END]
     """
 
-    async def complete(self, prompt: str, model: str = None, max_tokens: int = 1024) -> str:
+    async def complete(self, prompt: str, model: str = None, max_tokens: int = 1024,
+                       system: str = None):
         m        = model or self.model
         safe_url = f"{self.base_url}/models/{m}:generateContent"
 
         if self.supports_cache:
             logger.debug(f"Gemini: implicit caching active for model {m} (server-side, automatic).")
 
+        body = {
+            "contents":         [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"maxOutputTokens": max_tokens},
+        }
+        if system:
+            body["systemInstruction"] = {"parts": [{"text": system}]}
+
         async with httpx.AsyncClient() as client:
             r = await client.post(
                 safe_url,
                 params={"key": self.key},  # key in query param, never in logs
-                json={
-                    "contents":         [{"parts": [{"text": prompt}]}],
-                    "generationConfig": {"maxOutputTokens": max_tokens},
-                },
+                json=body,
                 timeout=self.timeout,
             )
             try:
                 r.raise_for_status()
             except httpx.HTTPStatusError as e:
-                raise RuntimeError(
-                    f"HTTP {e.response.status_code} from {safe_url}"
+                raise ProviderError(
+                    f"HTTP {e.response.status_code} from {safe_url}",
+                    e.response.status_code,
                 ) from None
-            return r.json()["candidates"][0]["content"]["parts"][0]["text"]
+            data = r.json()
 
-
-# --- OpenRouter ---------------------------------------------------------------
-class OpenRouterProvider(BaseProvider):
-    """OpenRouter API — OpenAI-compatible chat completions endpoint.
-
-    Required headers: HTTP-Referer + X-Title (required by OpenRouter for
-    free models and rate limit attribution).
-    """
-
-    async def complete(self, prompt: str, model: str = None, max_tokens: int = 1024) -> str:
-        data = await self._post(
-            f"{self.base_url}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {self.key}",
-                "HTTP-Referer":  os.getenv("APP_URL", "https://huggingface.co"),
-                "X-Title":       os.getenv("HUB_NAME", "Universal AI Hub"),  # required!
-                "content-type":  "application/json",
-            },
-            payload={
-                "model":      model or self.model,
-                "max_tokens": max_tokens,
-                "messages":   [{"role": "user", "content": prompt}],
-            },
-        )
-        return data["choices"][0]["message"]["content"]
-
-
-# --- HuggingFace --------------------------------------------------------------
-class HuggingFaceProvider(BaseProvider):
-    """HuggingFace Inference API — OpenAI-compatible serverless endpoint.
-
-    base_url in .pyfun: https://api-inference.huggingface.co/v1
-    Model goes in payload, not in URL.
-    Free tier: max ~8B models. PRO required for 70B+.
-    """
-
-    async def complete(self, prompt: str, model: str = None, max_tokens: int = 512) -> str:
-        m    = model or self.model
-        data = await self._post(
-            f"{self.base_url}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {self.key}",
-                "content-type":  "application/json",
-            },
-            payload={
-                "model":      m,
-                "max_tokens": max_tokens,
-                "messages":   [{"role": "user", "content": prompt}],
-            },
-        )
-        return data["choices"][0]["message"]["content"]
-
-
-# =============================================================================
-# DUMMY PROVIDERS — copy, uncomment, adapt
-# Steps: (1) uncomment class  (2) add to _PROVIDER_CLASSES  (3) add to .pyfun
-# =============================================================================
-
-# --- OpenAI -------------------------------------------------------------------
-# .pyfun block to add:
-#
-#   [LLM_PROVIDER.openai]
-#   active        = "true"
-#   base_url      = "https://api.openai.com/v1"
-#   env_key       = "OPENAI_API_KEY"
-#   default_model = "gpt-4o-mini"
-#   models        = "gpt-4o, gpt-4o-mini, gpt-3.5-turbo"
-#   fallback_to   = ""
-#   [LLM_PROVIDER.openai_END]
-#
-# class OpenAIProvider(BaseProvider):
-#     """OpenAI API — OpenAI-compatible chat completions endpoint."""
-#
-#     async def complete(self, prompt: str, model: str = None, max_tokens: int = 1024) -> str:
-#         data = await self._post(
-#             f"{self.base_url}/chat/completions",
-#             headers={
-#                 "Authorization": f"Bearer {self.key}",
-#                 "content-type":  "application/json",
-#             },
-#             payload={
-#                 "model":      model or self.model,
-#                 "max_tokens": max_tokens,
-#                 "messages":   [{"role": "user", "content": prompt}],
-#             },
-#         )
-#         return data["choices"][0]["message"]["content"]
-
-
-# --- Mistral ------------------------------------------------------------------
-# .pyfun block to add:
-#
-#   [LLM_PROVIDER.mistral]
-#   active        = "true"
-#   base_url      = "https://api.mistral.ai/v1"
-#   env_key       = "MISTRAL_API_KEY"
-#   default_model = "mistral-large-latest"
-#   models        = "mistral-large-latest, mistral-small-latest, codestral-latest"
-#   fallback_to   = ""
-#   [LLM_PROVIDER.mistral_END]
-#
-# class MistralProvider(BaseProvider):
-#     """Mistral AI API — OpenAI-compatible chat completions endpoint."""
-#
-#     async def complete(self, prompt: str, model: str = None, max_tokens: int = 1024) -> str:
-#         data = await self._post(
-#             f"{self.base_url}/chat/completions",
-#             headers={
-#                 "Authorization": f"Bearer {self.key}",
-#                 "content-type":  "application/json",
-#             },
-#             payload={
-#                 "model":      model or self.model,
-#                 "max_tokens": max_tokens,
-#                 "messages":   [{"role": "user", "content": prompt}],
-#             },
-#         )
-#         return data["choices"][0]["message"]["content"]
-
-
-# --- xAI (Grok) ---------------------------------------------------------------
-# .pyfun block to add:
-#
-#   [LLM_PROVIDER.xai]
-#   active        = "true"
-#   base_url      = "https://api.x.ai/v1"
-#   env_key       = "XAI_API_KEY"
-#   default_model = "grok-3-mini"
-#   models        = "grok-3, grok-3-mini, grok-3-fast"
-#   fallback_to   = ""
-#   [LLM_PROVIDER.xai_END]
-#
-# class XAIProvider(BaseProvider):
-#     """xAI Grok API — OpenAI-compatible chat completions endpoint."""
-#
-#     async def complete(self, prompt: str, model: str = None, max_tokens: int = 1024) -> str:
-#         data = await self._post(
-#             f"{self.base_url}/chat/completions",
-#             headers={
-#                 "Authorization": f"Bearer {self.key}",
-#                 "content-type":  "application/json",
-#             },
-#             payload={
-#                 "model":      model or self.model,
-#                 "max_tokens": max_tokens,
-#                 "messages":   [{"role": "user", "content": prompt}],
-#             },
-#         )
-#         return data["choices"][0]["message"]["content"]
+        text = data["candidates"][0]["content"]["parts"][0]["text"]
+        meta = data.get("usageMetadata") or {}
+        return text, _usage(meta.get("promptTokenCount"), meta.get("candidatesTokenCount"))
 
 
 # =============================================================================
 # SECTION 3 — Provider Registry
 # Built from .pyfun [LLM_PROVIDERS] at initialize().
-# Maps provider names → classes.
-# To activate a dummy: uncomment class above + add entry here.
+# Handler is chosen by the `type` field of the block (default: the block name).
+#   type = "openai_compat" → OpenAICompatProvider (generic, no code per provider)
+#   type = "anthropic"     → AnthropicProvider
+#   type = "gemini"        → GeminiProvider
+# New API format = new class above + one line here.
 # =============================================================================
 
-_PROVIDER_CLASSES = {
-    "smollm":      SmolLMProvider,
-    "anthropic":   AnthropicProvider,
-    "gemini":      GeminiProvider,
-    "openrouter":  OpenRouterProvider,
-    "huggingface": HuggingFaceProvider,
-    # "openai":   OpenAIProvider,    # ← uncomment to activate
-    # "mistral":  MistralProvider,   # ← uncomment to activate
-    # "xai":      XAIProvider,       # ← uncomment to activate
+_TYPE_CLASSES = {
+    "openai_compat": OpenAICompatProvider,
+    "anthropic":     AnthropicProvider,
+    "gemini":        GeminiProvider,
 }
 
 _registry: dict = {}
@@ -486,13 +448,14 @@ def initialize() -> None:
         if not env_key or not os.getenv(env_key):
             logger.info(f"Provider '{name}' skipped — ENV key not set.")
             continue
-        cls = _PROVIDER_CLASSES.get(name)
+        ptype = (cfg.get("type") or name).strip().lower()
+        cls = _TYPE_CLASSES.get(ptype)
         if not cls:
-            logger.info(f"Provider '{name}' has no handler yet — skipped.")
+            logger.info(f"Provider '{name}' has no handler (type '{ptype}') — skipped.")
             continue
         _registry[name] = cls(name, cfg)
         cache_hint = " [cache: ON]" if cfg.get("supports_cache", "false") == "true" else ""
-        logger.info(f"Provider registered: {name}{cache_hint}")
+        logger.info(f"Provider registered: {name} (type: {ptype}){cache_hint}")
 
     # Search providers — same key-gating principle
     _initialize_search()
@@ -502,12 +465,53 @@ def initialize() -> None:
 # SECTION 4 — LLM Execution + Fallback Chain
 # =============================================================================
 
+def provider_for_model(model: str) -> Optional[str]:
+    """
+    Provider that owns `model` according to .pyfun [MODELS] (provider field).
+    None if the model is unknown → caller keeps its default provider.
+    """
+    if not model:
+        return None
+    entry = models_mod.get(model) or {}
+    return entry.get("provider") or None
+
+
+def _clamp_tokens(model: str, max_tokens: int) -> int:
+    """Hard cap (MAX_TOKENS_CAP) + per-model max_output_tokens (manual or auto-pricing)."""
+    try:
+        n = max(1, int(max_tokens))
+    except (TypeError, ValueError):
+        n = 1024
+    cap = _limit("MAX_TOKENS_CAP", 8192)
+    if cap > 0:
+        n = min(n, cap)
+    lim = pricing.max_output_for(model)
+    if lim:
+        n = min(n, lim)
+    return n
+
+
+async def _record_usage(tool: str, provider: str, model: str, usage: dict, latency_ms: int) -> None:
+    """Log usage + estimated cost. NEVER raises — accounting must not break a call."""
+    try:
+        tin, tout = usage.get("input"), usage.get("output")
+        cost = None
+        if tin is not None or tout is not None:
+            cost = await pricing.cost_for(model, tin, tout)
+        await db_sync.log_usage(tool, provider, model, tin, tout, cost, latency_ms)
+        cost_txt = f"${cost:.6f}" if cost is not None else "n/a"
+        logger.info(f"Usage: {provider}/{model} in={tin} out={tout} cost≈{cost_txt} ({latency_ms} ms)")
+    except Exception as e:
+        logger.debug(f"Usage logging skipped: {type(e).__name__}")
+
+
 async def llm_complete(
     prompt: str,
     provider_name: str = None,
     model: str = None,
     max_tokens: int = 1024,
     system: str = None,
+    tool_name: str = "llm_complete",
 ) -> str:
     """
     Send prompt to LLM provider with automatic fallback chain.
@@ -516,49 +520,53 @@ async def llm_complete(
 
     Args:
         prompt:        Input text to send to the model.
-        provider_name: Provider name override. Defaults to default_provider
-                       from .pyfun [TOOL.llm_complete].
-        model:         Model name override. Defaults to provider's default_model.
-        max_tokens:    Max tokens in response. Default: 1024.
-        system:        Optional system prompt. Passed to providers that support it.
-                       AnthropicProvider caches it automatically if supports_cache = true
-                       and the system prompt is long enough (>= ~1024 tokens).
+        provider_name: Provider override. Unknown / non-LLM names are ignored.
+                       If only `model` is given, the provider is derived from [MODELS].
+        model:         Model override — applies to the FIRST provider only.
+        max_tokens:    Max tokens in response (clamped, see header).
+        system:        Optional system prompt — sent as real system prompt to every provider.
+        tool_name:     Only used for the usage log.
 
     Returns:
-        Model response as plain text string.
+        "[provider] text"
     """
+    model = (model or "").strip() or None
+    if provider_name and provider_name not in config.get_llm_providers():
+        logger.debug(f"'{provider_name}' is not an LLM provider — using default.")
+        provider_name = None
+    if not provider_name:
+        provider_name = provider_for_model(model)
     if not provider_name:
         tools_cfg     = config.get_active_tools()
         provider_name = tools_cfg.get("llm_complete", {}).get("default_provider", "anthropic")
 
     visited = set()
     current = provider_name
+    first   = True
 
     while current and current not in visited:
         visited.add(current)
-        provider = _registry.get(current)
+        provider  = _registry.get(current)
+        use_model = model if first else None   # explicit model belongs to the first provider only
+        first     = False
 
         if not provider:
             logger.warning(f"Provider '{current}' not in registry — trying fallback.")
         else:
+            m  = use_model or provider.model
+            mt = _clamp_tokens(m, max_tokens)
             try:
-                # Pass system prompt if provider supports it (Anthropic)
-                # Other providers accept **kwargs and ignore unknown params safely
-                if system is not None and hasattr(provider, 'complete'):
-                    import inspect
-                    sig = inspect.signature(provider.complete)
-                    if 'system' in sig.parameters:
-                        result = await provider.complete(prompt, model, max_tokens, system=system)
-                    else:
-                        result = await provider.complete(prompt, model, max_tokens)
-                else:
-                    result = await provider.complete(prompt, model, max_tokens)
-
+                t0 = time.monotonic()
+                text, usage = await _with_retry(
+                    current,
+                    lambda p=provider, um=use_model, n=mt: p.complete(prompt, um, n, system=system),
+                )
+                latency_ms = int((time.monotonic() - t0) * 1000)
                 logger.info(f"Response from provider: '{current}'")
-                return f"[{current}] {result}"
+                await _record_usage(tool_name, current, m, usage, latency_ms)
+                return f"[{current}] {text}"
             except Exception as e:
-                # Log only exception type + sanitized message — never raw {e}
-                # which may contain headers, keys, or response bodies
+                # Log only exception type + sanitized message — never raw headers/keys/bodies
                 logger.warning(
                     f"Provider '{current}' failed: {type(e).__name__}: {e} — trying fallback."
                 )
@@ -610,7 +618,7 @@ class BaseSearchProvider:
             try:
                 r.raise_for_status()
             except httpx.HTTPStatusError as e:
-                raise RuntimeError(f"HTTP {e.response.status_code} from {safe_url}") from None
+                raise ProviderError(f"HTTP {e.response.status_code} from {safe_url}", e.response.status_code) from None
             return r.json()
 
     async def _post(self, url: str, headers: dict, payload: dict) -> dict:
@@ -621,7 +629,7 @@ class BaseSearchProvider:
             try:
                 r.raise_for_status()
             except httpx.HTTPStatusError as e:
-                raise RuntimeError(f"HTTP {e.response.status_code} from {safe_url}") from None
+                raise ProviderError(f"HTTP {e.response.status_code} from {safe_url}", e.response.status_code) from None
             return r.json()
 
     def _clip(self, max_results: int) -> int:
@@ -768,6 +776,9 @@ async def search(
     Returns:
         Formatted search results as plain text string.
     """
+    if provider_name and provider_name not in config.get_search_providers():
+        logger.debug(f"'{provider_name}' is not a search provider — using default.")
+        provider_name = None
     if not provider_name:
         tools_cfg     = config.get_active_tools()
         provider_name = tools_cfg.get("web_search", {}).get("default_provider", "brave")
@@ -783,7 +794,7 @@ async def search(
             logger.warning(f"Search provider '{current}' not in registry — trying fallback.")
         else:
             try:
-                result = await provider.search(query, max_results)
+                result = await _with_retry(current, lambda p=provider: p.search(query, max_results))
                 logger.info(f"Search response from provider: '{current}'")
                 return result
             except Exception as e:

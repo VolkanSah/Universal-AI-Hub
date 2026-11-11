@@ -24,14 +24,16 @@
 #   hub_state        → db_sync (app/* internal state)
 #   tool_cache       → db_sync (app/* tool response cache)
 #   persist_queue    → db_sync (restart-safe queue → PostgreSQL long-term memory)
+#   usage_log        → db_sync (tokens + estimated cost per LLM call)
 # =============================================================================
 
 import asyncio
 import re
 import aiosqlite
+from pathlib import Path
 import logging
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from . import config
@@ -127,6 +129,25 @@ async def _init_tables() -> None:
                 attempts     INTEGER NOT NULL DEFAULT 0,
                 last_error   TEXT
             )
+        """)
+
+        # usage_log — one row per successful LLM call (tokens + estimated cost).
+        # cost_usd is NULL when no price is known. Read-only for everything else.
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS usage_log (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts         TEXT NOT NULL,
+                tool       TEXT,
+                provider   TEXT,
+                model      TEXT,
+                tokens_in  INTEGER,
+                tokens_out INTEGER,
+                cost_usd   REAL,
+                latency_ms INTEGER
+            )
+        """)
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_usage_log_ts ON usage_log(ts)
         """)
 
         await db.commit()
@@ -244,26 +265,31 @@ async def cache_write(
         await db.commit()
 
 
-async def cache_read(tool_name: str, prompt: str) -> Optional[str]:
+async def cache_read(tool_name: str, prompt: str, max_age_sec: int = 0) -> Optional[str]:
     """
     Read a cached tool response.
-    Returns None if no cache entry exists.
+    Returns None if no cache entry exists (or it is older than max_age_sec).
 
     Args:
-        tool_name: Tool name to look up.
-        prompt:    The exact prompt/query to match.
+        tool_name:   Tool name to look up.
+        prompt:      The exact prompt/query to match.
+        max_age_sec: Ignore entries older than this (0 = no age limit).
 
     Returns:
         Cached response string, or None if not found.
     """
     _check_init()
 
+    cutoff = ""
+    if max_age_sec and max_age_sec > 0:
+        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=max_age_sec)).isoformat()
+
     async with aiosqlite.connect(_db_path) as db:
         cursor = await db.execute("""
             SELECT response FROM tool_cache
-            WHERE tool_name = ? AND prompt = ?
+            WHERE tool_name = ? AND prompt = ? AND created_at >= ?
             ORDER BY created_at DESC LIMIT 1
-        """, (tool_name, prompt))
+        """, (tool_name, prompt, cutoff))
         row = await cursor.fetchone()
 
     return row[0] if row else None
@@ -273,11 +299,25 @@ async def cache_read(tool_name: str, prompt: str) -> Optional[str]:
 # SECTION 4 — Read-Only Query (for mcp.py db_query tool)
 # =============================================================================
 
+# Tables db_query must never touch (Guardian-owned) + SQLite internals.
+# Identifiers must appear literally in SQL, so a word-boundary check is reliable.
+_QUERY_BLOCKED = re.compile(
+    r"\b(users|sessions|sqlite_master|sqlite_schema|sqlite_temp_master|pragma|attach|detach)\b",
+    re.IGNORECASE,
+)
+_QUERY_MAX_ROWS = 1000
+
+
 async def query(sql: str) -> List[Dict]:
     """
     Execute a read-only SELECT query on the internal hub state database.
-    Only SELECT statements are permitted — write operations are blocked.
     Called by mcp.py db_query tool when db_sync.py is active.
+
+    Hardening (the docstring used to promise more than the code did):
+      - exactly ONE statement, must start with SELECT
+      - Guardian tables (users, sessions) + SQLite internals are rejected
+      - connection is opened read-only at engine level (mode=ro) — writes are impossible
+      - result is capped at 1000 rows
 
     Args:
         sql: SQL SELECT statement to execute.
@@ -286,18 +326,94 @@ async def query(sql: str) -> List[Dict]:
         List of result rows as dicts.
 
     Raises:
-        ValueError: If the query is not a SELECT statement.
+        ValueError: If the query is not an allowed SELECT statement.
     """
     _check_init()
 
-    if not sql.strip().upper().startswith("SELECT"):
+    stmt = sql.strip()
+    if stmt.endswith(";"):
+        stmt = stmt[:-1].rstrip()
+    if not stmt.upper().startswith("SELECT"):
         raise ValueError("Only SELECT queries are permitted in db_query tool.")
+    if ";" in stmt:
+        raise ValueError("Only a single statement is permitted in db_query tool.")
+    if _QUERY_BLOCKED.search(stmt):
+        raise ValueError("Query touches a protected table or SQLite internals.")
 
+    ro_uri = Path(_db_path).resolve().as_uri() + "?mode=ro"
+    async with aiosqlite.connect(ro_uri, uri=True) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(stmt)
+        rows   = await cursor.fetchmany(_QUERY_MAX_ROWS)
+        return [dict(r) for r in rows]
+
+
+# =============================================================================
+# SECTION 4b — Usage / Cost Log (usage_log table)
+# =============================================================================
+
+async def log_usage(
+    tool: str,
+    provider: str,
+    model: str,
+    tokens_in: Optional[int],
+    tokens_out: Optional[int],
+    cost_usd: Optional[float],
+    latency_ms: Optional[int] = None,
+) -> None:
+    """Append one usage row. Called by providers.py after every successful LLM call."""
+    _check_init()
+    now = datetime.now(timezone.utc).isoformat()
+    async with aiosqlite.connect(_db_path) as db:
+        await db.execute("""
+            INSERT INTO usage_log (ts, tool, provider, model, tokens_in, tokens_out, cost_usd, latency_ms)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (now, tool, provider, model, tokens_in, tokens_out, cost_usd, latency_ms))
+        await db.commit()
+
+
+_USAGE_GROUPS = {"model": "model", "provider": "provider", "tool": "tool", "day": "substr(ts, 1, 10)"}
+
+
+async def usage_stats(group_by: str = "model", days: Optional[int] = None) -> Dict[str, Any]:
+    """
+    Aggregate usage_log.
+
+    Args:
+        group_by: "model" | "provider" | "tool" | "day"
+        days:     Only count the last N days (None = all time).
+
+    Returns:
+        {"group_by", "days", "rows": [...], "total": {...}}
+        cost_usd is the sum of KNOWN costs; calls_unpriced counts calls without a price.
+    """
+    _check_init()
+    col = _USAGE_GROUPS.get(str(group_by).lower())
+    if not col:
+        raise ValueError(f"group_by must be one of {sorted(_USAGE_GROUPS)}")
+
+    where, args = "", []
+    if days:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=int(days))).isoformat()
+        where, args = "WHERE ts >= ?", [cutoff]
+
+    select = """
+        COUNT(*)                                         AS calls,
+        COALESCE(SUM(tokens_in), 0)                      AS tokens_in,
+        COALESCE(SUM(tokens_out), 0)                     AS tokens_out,
+        ROUND(COALESCE(SUM(cost_usd), 0), 6)             AS cost_usd,
+        SUM(CASE WHEN cost_usd IS NULL THEN 1 ELSE 0 END) AS calls_unpriced
+    """
     async with aiosqlite.connect(_db_path) as db:
         db.row_factory = aiosqlite.Row
-        cursor = await db.execute(sql)
-        rows   = await cursor.fetchall()
-        return [dict(r) for r in rows]
+        cur  = await db.execute(
+            f"SELECT {col} AS grp, {select} FROM usage_log {where} GROUP BY grp ORDER BY cost_usd DESC, calls DESC",
+            args)
+        rows = [dict(r) for r in await cur.fetchall()]
+        cur  = await db.execute(f"SELECT {select} FROM usage_log {where}", args)
+        total = dict(await cur.fetchone())
+
+    return {"group_by": group_by, "days": days, "rows": rows, "total": total}
 
 
 # =============================================================================

@@ -145,12 +145,16 @@ def _lookup(model_name: str) -> Optional[Dict[str, Any]]:
 # =============================================================================
 # Source Fetchers — each returns {normalized_name: entry}
 # =============================================================================
-async def _fetch_openrouter(url: str) -> Dict[str, Dict[str, Any]]:
+async def _fetch_openrouter(url: str):
     """
     OpenRouter public models endpoint — no key required.
     https://openrouter.ai/api/v1/models → data[].{id, pricing{prompt,completion}, context_length}
+
+    Returns (entries, raw_ids): raw_ids = every real OpenRouter model ID (lowercase) —
+    used by check_models() to spot stale/removed models in .pyfun [MODELS].
     """
     out: Dict[str, Dict[str, Any]] = {}
+    raw_ids = []
     async with httpx.AsyncClient() as client:
         r = await client.get(url, timeout=30)
         r.raise_for_status()
@@ -160,6 +164,7 @@ async def _fetch_openrouter(url: str) -> Dict[str, Dict[str, Any]]:
         model_id = m.get("id", "")
         if not model_id:
             continue
+        raw_ids.append(model_id.lower())
         pricing = m.get("pricing", {}) or {}
         entry: Dict[str, Any] = {"source": "openrouter"}
 
@@ -180,7 +185,7 @@ async def _fetch_openrouter(url: str) -> Dict[str, Dict[str, Any]]:
             entry["max_output_tokens"] = max_out
 
         out[_normalize(model_id)] = entry
-    return out
+    return out, raw_ids
 
 
 async def _fetch_litellm(url: str) -> Dict[str, Dict[str, Any]]:
@@ -280,10 +285,11 @@ async def refresh() -> Dict[str, Any]:
 
     merged: Dict[str, Dict[str, Any]] = {}
     sources: Dict[str, int] = {}
+    or_ids: list = []
 
     # --- Source 1: OpenRouter ---
     try:
-        or_models = await _fetch_openrouter(or_url)
+        or_models, or_ids = await _fetch_openrouter(or_url)
         merged.update(or_models)
         sources["openrouter"] = len(or_models)
         logger.info(f"Pricing source OpenRouter: {len(or_models)} models.")
@@ -309,14 +315,21 @@ async def refresh() -> Dict[str, Any]:
             "fetched_at": datetime.now(timezone.utc).isoformat(),
             "sources": sources,
             "model_count": len(merged),
+            # keep the last known OpenRouter ID list if this fetch failed
+            "openrouter_ids": or_ids or _meta.get("openrouter_ids", []),
         }
         _loose_dirty = True
         await _save_cache_to_db()
+
+    stale = check_models()
+    if stale:
+        logger.warning(f"Models in .pyfun not found in OpenRouter catalog (stale/removed?): {stale}")
 
     return {
         "fetched_at": _meta.get("fetched_at"),
         "sources": sources,
         "models_cached": len(_cache),
+        "stale_models": stale,
     }
 
 
@@ -427,6 +440,49 @@ async def get_pricing(model_name: str) -> Dict[str, Any]:
     return result
 
 
+def check_models() -> list:
+    """
+    .pyfun [MODELS] entries with provider "openrouter" whose ID is NOT in the live
+    OpenRouter catalog (free models come and go). Empty list if the catalog is unknown.
+    """
+    ids = set(_meta.get("openrouter_ids") or [])
+    if not ids:
+        return []
+    return sorted(
+        name for name, cfg in config.get_models().items()
+        if cfg.get("provider") == "openrouter" and name.lower() not in ids
+    )
+
+
+def max_output_for(model_name: str) -> Optional[int]:
+    """
+    Max output tokens for a model (sync, for clamping): manual .pyfun value wins,
+    then auto-fetched. None if unknown → no clamp.
+    """
+    from . import models as models_mod
+    manual = _safe_int((models_mod.get(model_name) or {}).get("max_output_tokens"))
+    if manual:
+        return manual
+    auto = _lookup(model_name) if _cache else None
+    return _safe_int(auto.get("max_output_tokens")) if auto else None
+
+
+async def cost_for(model_name: str, tokens_in: Optional[int], tokens_out: Optional[int]) -> Optional[float]:
+    """
+    Estimated USD cost of one call from merged pricing (manual > auto).
+    None if no price is known. Anthropic cache read/write surcharges are not modeled.
+    """
+    info = await get_pricing(model_name)
+    c_in, c_out = info.get("cost_input_per_1k"), info.get("cost_output_per_1k")
+    if c_in is None and c_out is None:
+        return None
+    try:
+        return round(((tokens_in or 0) / 1000) * float(c_in or 0)
+                     + ((tokens_out or 0) / 1000) * float(c_out or 0), 8)
+    except (TypeError, ValueError):
+        return None
+
+
 def is_ready() -> bool:
     """True if pricing cache holds at least one model."""
     return bool(_cache)
@@ -439,6 +495,7 @@ def stats() -> Dict[str, Any]:
         "fetched_at": _meta.get("fetched_at"),
         "sources": _meta.get("sources", {}),
         "fresh": _cache_is_fresh(),
+        "stale_models": check_models(),
     }
 
 

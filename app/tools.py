@@ -57,6 +57,33 @@ def initialize() -> None:
 
 
 # =============================================================================
+# Response cache helper (opt-in per tool, backed by db_sync.tool_cache)
+# =============================================================================
+
+async def _cached(tool_name: str, key: str, tool_cfg: Dict, enabled: bool, call) -> str:
+    """Run `call()` (async callable); with cache = "true" serve/store via db_sync. Never breaks the call."""
+    if not enabled:
+        return await call()
+    try:
+        ttl = int(tool_cfg.get("cache_ttl_sec", "3600"))
+    except (TypeError, ValueError):
+        ttl = 3600
+    try:
+        hit = await db_sync.cache_read(tool_name, key, max_age_sec=ttl)
+        if hit is not None:
+            logger.info(f"Tool '{tool_name}': cache hit.")
+            return hit
+    except Exception as e:
+        logger.debug(f"Cache read skipped: {type(e).__name__}")
+    result = await call()
+    try:
+        await db_sync.cache_write(tool_name, key, result)
+    except Exception as e:
+        logger.debug(f"Cache write skipped: {type(e).__name__}")
+    return result
+
+
+# =============================================================================
 # Public API — used by mcp.py tool handlers
 # =============================================================================
 
@@ -111,24 +138,38 @@ async def run(
             "persist_result requires 'prompt' (or set state_read_key in .pyfun [TOOL.persist_result])."
         )
 
-    # Build full prompt — prepend system_prompt if defined in .pyfun
-    full_prompt = f"{system_prompt}\n\n{prompt}".strip() if system_prompt else prompt
+    # Opt-in response cache per tool: cache = "true" (+ cache_ttl_sec) in .pyfun [TOOL.xyz]
+    use_cache = str(tool_cfg.get("cache", "false")).lower() == "true"
 
     # --- LLM tools ---
+    # system_prompt goes out as a REAL system prompt (no longer glued into the user prompt).
+    # Only a model given (no provider) → provider is derived from .pyfun [MODELS].
     if provider_type == "llm":
-        return await providers.llm_complete(
-            prompt=full_prompt,
-            provider_name=default_provider,
-            model=model,
-            max_tokens=max_tokens,
+        prov = provider_name or providers.provider_for_model(model) or tool_cfg.get("default_provider", "")
+        return await _cached(
+            tool_name, f"{prov}|{model or ''}|{max_tokens}|{system_prompt}|{prompt}", tool_cfg, use_cache,
+            lambda: providers.llm_complete(
+                prompt=prompt,
+                provider_name=prov,
+                model=model,
+                max_tokens=max_tokens,
+                system=system_prompt or None,
+                tool_name=tool_name,
+            ),
         )
 
     # --- Search tools ---
+    # providers.search() ignores provider names that are not search providers
+    # (e.g. a GUI sending its LLM provider along).
     if provider_type == "search":
-        return await providers.search(
-            query=prompt,
-            provider_name=default_provider,
-            max_results=max_results or int(tool_cfg.get("default_results", "5")),
+        n_results = max_results or int(tool_cfg.get("default_results", "5"))
+        return await _cached(
+            tool_name, f"{default_provider}|{n_results}|{prompt}", tool_cfg, use_cache,
+            lambda: providers.search(
+                query=prompt,
+                provider_name=default_provider,
+                max_results=n_results,
+            ),
         )
 
     # --- DB tools (read-only, delegated to db_sync when ready) ---

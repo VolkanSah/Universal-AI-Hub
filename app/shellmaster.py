@@ -34,6 +34,7 @@
 import json
 import logging
 import os
+import re
 import httpx
 from pathlib import Path
 from typing import Optional
@@ -90,9 +91,23 @@ _HARDCODED_BLOCKED = {
 }
 
 
+# rm with a recursive flag in ANY order/position (-rf, -fr, -r -f, --recursive) aimed at
+# root, home, wildcard or the current/parent dir. Plain substring matching on "rm -rf /"
+# misses "rm -fr /" and "rm -r -f /".
+_RM_DANGEROUS = re.compile(
+    r"\brm\s+(?:-\S+\s+)*(?:-\S*r\S*|--recursive)\s+(?:-\S+\s+)*(?:/(?:\s|$|\*)|~|\*|\$home|\.\.?(?:\s|$))"
+)
+
+# Shell metacharacters that chain / redirect / substitute commands. A registry command is
+# matched by its FIRST token only, so "ls; rm x" would otherwise pass as "ls".
+_SHELL_META = re.compile(r"[;&|`<>\n\r]|\$\(|\$\{")
+
+
 def _is_hardblocked(cmd_str: str) -> bool:
     """Check if command contains any hardcoded blocked pattern."""
-    cmd_lower = cmd_str.lower().strip()
+    cmd_lower = " ".join(cmd_str.lower().split())   # normalize whitespace
+    if _RM_DANGEROUS.search(cmd_lower):
+        return True
     return any(blocked in cmd_lower for blocked in _HARDCODED_BLOCKED)
 
 
@@ -191,15 +206,23 @@ def _validate_command(cmd_str: str) -> tuple[bool, str]:
     if _is_hardblocked(cmd_str):
         return False, "blocked by system policy"
 
-    # Match against registry
+    # No chaining / redirection / substitution — one command, nothing else
+    if _SHELL_META.search(cmd_str):
+        return False, "shell metacharacters (; & | ` < > $( ) are not allowed"
+
+    # Match against registry — FIRST TOKEN must equal the template's first token
     registry = _load_registry()
-    cmd_lower = cmd_str.lower().strip()
+    tokens = cmd_str.lower().split()
+    if not tokens:
+        return False, "empty command"
 
     for cmd_id, cmd in registry.items():
         # Check both unix and win templates
         for os_key in ("unix", "win"):
-            template_base = cmd.get(os_key, "").split()[0].lower()
-            if template_base and cmd_lower.startswith(template_base):
+            parts = (cmd.get(os_key) or "").split()   # empty template (e.g. unix-only command) → skip
+            if not parts:
+                continue
+            if tokens[0] == parts[0].lower():
                 if not cmd.get("allowed", False):
                     return False, f"command '{cmd_id}' is blocked in registry"
                 return True, cmd_id

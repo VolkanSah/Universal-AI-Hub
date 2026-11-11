@@ -374,6 +374,25 @@ def _register_pricing_tools(mcp) -> None:
 
     logger.info("Tool registered: refresh_pricing")
 
+    @mcp.tool()
+    async def usage_stats(group_by: str = "model", days: int = 0) -> Dict[str, Any]:
+        """
+        What did my LLM calls cost? Aggregated from the usage_log table.
+
+        Args:
+            group_by: "model" | "provider" | "tool" | "day". Default: "model".
+            days:     Only the last N days (0 = all time).
+
+        Returns:
+            Dict with rows (calls, tokens_in, tokens_out, cost_usd, calls_unpriced per group)
+            and a total. cost_usd is an ESTIMATE from merged pricing; calls_unpriced counts
+            calls for which no price was known.
+        """
+        from . import db_sync
+        return await db_sync.usage_stats(group_by=group_by, days=days or None)
+
+    logger.info("Tool registered: usage_stats")
+
 
 # =============================================================================
 # DB Tools — db_sync.py is ready, enabled
@@ -383,9 +402,10 @@ def _register_db_tools(mcp) -> None:
     Register internal SQLite query tool.
     Uses db_sync.py (app/* internal SQLite) — NOT postgresql.py (Guardian-only)!
 
-    SECURITY: Only SELECT queries are permitted.
-    Enforced at application level in db_sync.query() — not just in docs.
-    Tables accessible: hub_state, tool_cache  (app/* only)
+    SECURITY: Only a single SELECT is permitted.
+    Enforced in db_sync.query(): read-only connection, users/sessions/sqlite internals
+    rejected, max 1000 rows.
+    Tables accessible: hub_state, tool_cache, persist_queue, usage_log  (app/* only)
     Tables blocked:    users, sessions         (Guardian-only, different owner)
 
     Requirements (all met):
@@ -404,8 +424,10 @@ def _register_db_tools(mcp) -> None:
         at the db_sync layer (not just by convention).
 
         Accessible tables:
-            hub_state   — current hub runtime state (tool status, uptime, etc.)
-            tool_cache  — cached tool results for repeated queries
+            hub_state     — current hub runtime state (tool status, uptime, etc.)
+            tool_cache    — cached tool results for repeated queries
+            persist_queue — memory queue waiting for PostgreSQL
+            usage_log     — tokens + estimated cost per LLM call
 
         NOT accessible (Guardian-only):
             users       — managed by fundaments/user_handler.py

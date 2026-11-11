@@ -1,0 +1,6 @@
+PySide6 
+httpx
+Pillow
+PyPDF2 
+pandas 
+openpyxl

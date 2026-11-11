@@ -38,6 +38,7 @@ from . import pricing      # Auto model costs (OpenRouter + LiteLLM) — reads a
 from . import tools        # MCP tool definitions + provider mapping — reads app/.pyfun
 from . import db_sync      # Internal SQLite IPC — app/* state & communication
 from . import shellmaster  # ShellMaster 2.0 — safe shell assistant (inactive by default)
+from . import auth         # Optional shared-token gate for /api, /crypto, /mcp (off without token)
 #                          # db_sync ≠ postgresql.py! Cloud DB is Guardian-only.
 # Future modules (will uncomment when ready):
 # from . import discord_api  # Discord bot integration
@@ -109,7 +110,7 @@ async def health_check():
 async def api_endpoint():
     """
     REST tool gateway: POST {"tool": "name", "params": {...}}
-    Hook point: add auth / rate limiting here before dispatching.
+    Auth: optional shared token — see app/auth.py (.pyfun [HUB] HUB_AUTH_ENV).
     """
     try:
         data      = await request.get_json(silent=True) or {}
@@ -118,6 +119,9 @@ async def api_endpoint():
 
         if not tool_name:
             return jsonify({"error": "Missing 'tool'"}), 400
+        if not isinstance(params, dict):
+            return jsonify({"error": "'params' must be an object"}), 400
+        params.pop("tool_name", None)  # would collide with tools.run(tool_name, ...) → 500
 
         # System tools — handle directly, no prompt needed!
         if tool_name == "list_active_tools":
@@ -143,6 +147,14 @@ async def api_endpoint():
         # persist_status — memory orchestration observability (no prompt needed)
         if tool_name == "persist_status":
             return jsonify({"result": await db_sync.persist_queue_stats()})
+
+        # usage_stats — tokens + estimated cost per model/provider/tool/day
+        if tool_name == "usage_stats":
+            result = await db_sync.usage_stats(
+                group_by=str(params.get("group_by", "model")),
+                days=int(params.get("days") or 0) or None,
+            )
+            return jsonify({"result": result})
 
         # get_model_pricing — auto-fetched costs, .pyfun values win as override
         if tool_name == "get_model_pricing":
@@ -279,6 +291,13 @@ async def start_application(fundaments: Dict[str, Any]) -> None:
     mcp_asgi  = mcp.get_asgi_app()
     app.asgi_app = _make_mount_middleware(app.asgi_app, mcp.mount_prefixes(), mcp_asgi)
     logger.info(f"MCP mounted: {', '.join(mcp.mount_prefixes())}")
+
+    # Optional token gate (outermost layer). No token configured = open, as before.
+    app.asgi_app = auth.make_middleware(
+        app.asgi_app,
+        auth.token_from_env(hub_cfg.get("HUB_AUTH_ENV", "")),
+        ("/api", "/crypto") + tuple(mcp.mount_prefixes()),
+    )
 
     # --- Read HOST/PORT from app/.pyfun [HUB] ---
     host = hub_cfg.get("HUB_HOST", "0.0.0.0")
