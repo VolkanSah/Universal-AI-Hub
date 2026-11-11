@@ -113,6 +113,7 @@ async def initialize() -> None:
     _register_db_tools(_mcp)    # db_sync ready — SELECT-only, app/* tables
     _register_persist_tools(_mcp)  # memory orchestration — queue-safe, no PG required
     _register_integration_tools(_mcp)  # discord_post / gsc_query — only if active in .pyfun
+    _register_skills_tools(_mcp)       # show_skills / search_skills — read-only skill DBs
 
     logger.info(f"MCP Hub initialized. Transport: {_transport}")
 
@@ -292,18 +293,17 @@ def _register_system_tools(mcp) -> None:
     logger.info("Tool registered: list_active_tools")
 
     @mcp.tool()
-    def health_check() -> Dict[str, str]:
+    async def health_check() -> Dict[str, Any]:
         """
-        Health check endpoint for HuggingFace Spaces and monitoring systems.
+        Health check: hub status + PostgreSQL awake-check (short ping, also wakes a
+        sleeping Neon), persist queue depth, active providers, integrations.
 
         Returns:
-            Dict with service status and active transport.
+            Dict — status "ok" | "degraded" (PostgreSQL configured but not answering).
         """
-        return {
-            "status":    "ok",
-            "service":   "Universal MCP Hub",
-            "transport": _transport,
-        }
+        result = await tools.health()
+        result["transport"] = _transport
+        return result
 
     logger.info("Tool registered: health_check")
 
@@ -394,6 +394,25 @@ def _register_pricing_tools(mcp) -> None:
 
     logger.info("Tool registered: usage_stats")
 
+    @mcp.tool()
+    async def openrouter_catalog(query: str = "", free_only: bool = True, limit: int = 40) -> Dict[str, Any]:
+        """
+        Real model IDs from the live OpenRouter catalog — to pick valid entries for .pyfun [MODELS]
+        (free models come and go; `stale_models` in health_check lists the ones that vanished).
+
+        Args:
+            query:     Substring filter, e.g. "llama", "qwen", "gemma".
+            free_only: Only ":free" models (default True).
+            limit:     Max rows (1-200).
+
+        Returns:
+            {in_catalog, matches, shown, models:[{id, context_tokens, cost_input_per_1k, cost_output_per_1k}]}
+        """
+        from . import pricing
+        return await pricing.catalog(query=query, free_only=free_only, limit=limit)
+
+    logger.info("Tool registered: openrouter_catalog")
+
 
 # =============================================================================
 # DB Tools — db_sync.py is ready, enabled
@@ -452,6 +471,43 @@ def _register_db_tools(mcp) -> None:
 # =============================================================================
 # Persist Tools — Gedächtnis-Orchestrierung (SQLite-Queue → PostgreSQL)
 # =============================================================================
+def _register_skills_tools(mcp) -> None:
+    """show_skills / search_skills — only if active in .pyfun AND skill DBs were found."""
+    from . import skills_db
+    if not skills_db.is_ready():
+        return
+
+    if "show_skills" in tools.list_all():
+        @mcp.tool()
+        async def show_skills(scope: str = "all", tag: str = "") -> Any:
+            """
+            List available skills (name, description, tags, chunk count).
+
+            Args:
+                scope: "all" (default) | "user" | "agent". The core skill is never listed.
+                tag:   Optional tag filter.
+            """
+            return await tools.run("show_skills", scope=scope, tag=tag)
+
+        logger.info("Tool registered: show_skills")
+
+    if "search_skills" in tools.list_all():
+        @mcp.tool()
+        async def search_skills(query: str, top_k: int = 3, tag: str = "", scope: str = "user") -> Any:
+            """
+            Keyword search (BM25) over skills — returns the best matching chunks.
+
+            Args:
+                query: Search words.
+                top_k: 1-10 chunks. Default 3.
+                tag:   Optional tag filter.
+                scope: "user" (default) | "agent" | "all". The core skill is never searchable.
+            """
+            return await tools.run("search_skills", prompt=query, top_k=top_k, tag=tag, scope=scope)
+
+        logger.info("Tool registered: search_skills")
+
+
 def _register_integration_tools(mcp) -> None:
     """
     Optional integrations — registered ONLY if the tool is active in .pyfun AND the module is ready.

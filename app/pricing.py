@@ -440,6 +440,26 @@ async def get_pricing(model_name: str) -> Dict[str, Any]:
     return result
 
 
+async def catalog(query: str = "", free_only: bool = False, limit: int = 50) -> Dict[str, Any]:
+    """
+    Real model IDs of the live OpenRouter catalog (for picking valid [MODELS] entries).
+    Fetches the catalog once if it is not loaded yet. Read-only, no key needed.
+    """
+    if not _meta.get("openrouter_ids"):
+        await refresh()
+    ids = _meta.get("openrouter_ids") or []
+    q = (query or "").strip().lower()
+    hits = sorted(i for i in ids if (not free_only or i.endswith(":free")) and (not q or q in i))
+    limit = max(1, min(int(limit or 50), 200))
+    rows = []
+    for i in hits[:limit]:
+        info = _lookup(i) or {}
+        rows.append({"id": i, "context_tokens": info.get("context_tokens"),
+                     "cost_input_per_1k": info.get("cost_input_per_1k"),
+                     "cost_output_per_1k": info.get("cost_output_per_1k")})
+    return {"in_catalog": len(ids), "matches": len(hits), "shown": len(rows), "models": rows}
+
+
 def check_models() -> list:
     """
     .pyfun [MODELS] entries with provider "openrouter" whose ID is NOT in the live

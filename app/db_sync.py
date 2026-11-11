@@ -29,6 +29,7 @@
 
 import asyncio
 import re
+import time
 import aiosqlite
 from pathlib import Path
 import logging
@@ -531,9 +532,10 @@ async def enqueue_persist(
         return int((await cursor.fetchone())[0])
 
 
-async def flush_persist_queue(limit: int = 50) -> Dict[str, Any]:
+async def _flush_locked(limit: int = 50) -> Dict[str, Any]:
     """
     Try to move queued entries to PostgreSQL. NEVER raises.
+    (Single-flight: always called through flush_persist_queue(), which holds the lock.)
 
     No writer  → no-op with reason (entries keep waiting — no crash).
     Writer set → CREATE TABLE IF NOT EXISTS + INSERT per entry + queue delete.
@@ -554,6 +556,14 @@ async def flush_persist_queue(limit: int = 50) -> Dict[str, Any]:
             "reason": "no_postgres_writer",
         }
 
+    # Neon asleep / unreachable a moment ago → don't even try (entries stay queued, nothing blocks)
+    if time.monotonic() < _pg_down_until:
+        return {
+            "flushed": 0, "errors": 0,
+            "remaining": await _queue_count(),
+            "reason": "pg_backoff",
+        }
+
     flushed = errors = 0
     async with aiosqlite.connect(_db_path) as db:
         db.row_factory = aiosqlite.Row
@@ -570,9 +580,9 @@ async def flush_persist_queue(limit: int = 50) -> Dict[str, Any]:
                 if not _SAFE_TABLE_NAME.match(table or ""):
                     raise ValueError("invalid table name")
                 if table not in _pg_tables_ensured:
-                    await _psql_writer(_PG_DDL.format(table=table))
+                    await _pg_exec(_PG_DDL.format(table=table))
                     _pg_tables_ensured.add(table)
-                await _psql_writer(
+                await _pg_exec(
                     f"INSERT INTO {table} (source, model, score, payload) "
                     "VALUES ($1, $2, $3, $4::jsonb)",
                     row["source"], row["model"], row["score"], row["payload"],
@@ -589,6 +599,8 @@ async def flush_persist_queue(limit: int = 50) -> Dict[str, Any]:
                     (type(e).__name__, row["id"]),
                 )
                 await db.commit()
+                if _is_conn_failure(e):
+                    break   # DB unreachable: stop here — don't burn one timeout per remaining row
 
     remaining = await _queue_count()
     if flushed:
@@ -596,6 +608,122 @@ async def flush_persist_queue(limit: int = 50) -> Dict[str, Any]:
     if errors:
         logger.warning(f"Persist flush: {errors} failed — stay queued (retry next interval).")
     return {"flushed": flushed, "errors": errors, "remaining": remaining}
+
+
+# =============================================================================
+# SECTION 6b — Neon / PostgreSQL resilience (scale-to-zero friendly)
+# Neon suspends idle compute; the first connection afterwards can be slow or time out.
+# Principle: the hub NEVER waits for PostgreSQL on a request path and never crashes.
+#   - every PG write has a hard time limit (PG_WRITE_TIMEOUT_SEC)
+#   - after a connection failure PG is skipped for PG_BACKOFF_SEC (entries stay queued)
+#   - request path waits at most PG_REQUEST_WAIT_SEC; the flush continues in background
+#   - pg_status() = cheap "is the DB awake?" ping for health checks (it also wakes Neon)
+#   - optional keepalive (PG_KEEPALIVE_SEC, default 0 = off): keeps Neon awake, costs compute time
+# All knobs in .pyfun [DB_SYNC].
+# =============================================================================
+
+_pg_down_until: float = 0.0
+_pg_last: Dict[str, Any] = {"at": -1e9}
+_flush_lock: Optional[asyncio.Lock] = None
+_bounded_task: Optional[asyncio.Task] = None
+_keepalive_task: Optional[asyncio.Task] = None
+
+
+def _pg_cfg(key: str, default: float) -> float:
+    try:
+        return float(config.get_db_sync().get(key, default))
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _is_conn_failure(e: BaseException) -> bool:
+    """Timeout / socket / asyncpg connection-class errors (matched by name — no asyncpg import here)."""
+    name = type(e).__name__
+    return isinstance(e, (asyncio.TimeoutError, OSError)) or "Connection" in name or "Interface" in name
+
+
+def _pg_mark(ok: bool) -> None:
+    global _pg_down_until
+    _pg_down_until = 0.0 if ok else time.monotonic() + _pg_cfg("PG_BACKOFF_SEC", 30)
+
+
+async def _pg_exec(query: str, *args):
+    """One PG write with a hard time limit. Connection-class failures arm the backoff."""
+    try:
+        result = await asyncio.wait_for(_psql_writer(query, *args), timeout=_pg_cfg("PG_WRITE_TIMEOUT_SEC", 10))
+        _pg_mark(True)
+        return result
+    except Exception as e:
+        if _is_conn_failure(e):
+            _pg_mark(False)
+        raise
+
+
+async def flush_persist_queue(limit: int = 50) -> Dict[str, Any]:
+    """Single-flight flush (lock): timer + request path can never insert the same row twice."""
+    global _flush_lock
+    _check_init()
+    if _flush_lock is None:
+        _flush_lock = asyncio.Lock()
+    async with _flush_lock:
+        return await _flush_locked(limit)
+
+
+async def flush_persist_queue_bounded(limit: int = 50, wait_sec: Optional[float] = None) -> Dict[str, Any]:
+    """
+    Request-path flush: waits at most PG_REQUEST_WAIT_SEC. If PostgreSQL is slow/asleep the
+    flush keeps running in the background (shielded) and the caller gets reason "pg_slow".
+    """
+    global _bounded_task
+    wait = _pg_cfg("PG_REQUEST_WAIT_SEC", 3) if wait_sec is None else wait_sec
+    if _bounded_task is None or _bounded_task.done():
+        _bounded_task = asyncio.create_task(flush_persist_queue(limit))
+    try:
+        return await asyncio.wait_for(asyncio.shield(_bounded_task), timeout=wait)
+    except asyncio.TimeoutError:
+        return {"flushed": 0, "errors": 0, "remaining": await _queue_count(), "reason": "pg_slow"}
+
+
+async def pg_status(force: bool = False) -> Dict[str, Any]:
+    """
+    Is PostgreSQL awake? Cheap ping (SELECT 1) with a short limit, cached PG_STATUS_TTL_SEC.
+    state: "up" | "no_response" (asleep/waking/unreachable) | "error"; bridge: active|inactive.
+    The ping itself wakes a suspended Neon compute.
+    """
+    if not _psql_writer:
+        return {"bridge": "inactive", "state": "n/a"}
+    now = time.monotonic()
+    if not force and now - _pg_last["at"] < _pg_cfg("PG_STATUS_TTL_SEC", 20):
+        return {k: v for k, v in _pg_last.items() if k != "at"}
+
+    t0 = time.monotonic()
+    state, err = "up", None
+    try:
+        await asyncio.wait_for(_psql_writer("SELECT 1"), timeout=_pg_cfg("PG_PING_TIMEOUT_SEC", 5))
+        _pg_mark(True)
+    except asyncio.TimeoutError:
+        state = "no_response"
+        _pg_mark(False)
+    except Exception as e:
+        state, err = "error", type(e).__name__
+        if _is_conn_failure(e):
+            _pg_mark(False)
+    _pg_last.clear()
+    _pg_last.update({
+        "at": time.monotonic(), "bridge": "active", "state": state,
+        "latency_ms": int((time.monotonic() - t0) * 1000), "error": err,
+        "backoff_active": time.monotonic() < _pg_down_until,
+    })
+    return {k: v for k, v in _pg_last.items() if k != "at"}
+
+
+async def _keepalive_loop(interval: float) -> None:
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            await pg_status(force=True)
+        except Exception as e:
+            logger.debug(f"Keepalive ping skipped: {type(e).__name__}")
 
 
 async def _queue_count() -> int:
@@ -637,6 +765,12 @@ def start_persist_flusher() -> None:
     interval = float(config.get_db_sync().get("PERSIST_FLUSH_INTERVAL_SEC", "60"))
     _flush_task = asyncio.create_task(_persist_flush_loop(interval))
     logger.info(f"Persist flusher started (interval: {interval}s).")
+
+    global _keepalive_task
+    ka = _pg_cfg("PG_KEEPALIVE_SEC", 0)
+    if ka > 0 and _keepalive_task is None:
+        _keepalive_task = asyncio.create_task(_keepalive_loop(ka))
+        logger.info(f"PostgreSQL keepalive ping every {int(ka)}s (keeps Neon awake — uses compute time).")
 
 
 async def _persist_flush_loop(interval: float) -> None:

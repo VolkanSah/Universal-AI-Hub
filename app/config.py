@@ -303,6 +303,11 @@ def get_discord() -> Dict[str, Any]:
     return get_section("DISCORD")
 
 
+def get_skills() -> Dict[str, Any]:
+    """Returns [SKILLS] section — read-only skill databases (app/db/skills/)."""
+    return get_section("SKILLS")
+
+
 def get_gsc() -> Dict[str, Any]:
     """Returns [GSC] section — Google Search Console tool (inactive unless GSC_ACTIVE = "true")."""
     return get_section("GSC")

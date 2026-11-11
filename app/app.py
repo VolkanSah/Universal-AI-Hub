@@ -42,6 +42,7 @@ from . import shellmaster  # ShellMaster 2.0 — safe shell assistant (inactive 
 from . import auth         # Optional shared-token gate for /api, /crypto, /mcp (off without token)
 from . import discord_api  # Discord: outbound post + interactions endpoint (inactive by default)
 from . import gsc          # Google Search Console tool (inactive by default, optional libs)
+from . import skills_db    # Skill databases app/db/skills/ (read-only; BM25)
 #                          # db_sync ≠ postgresql.py! Cloud DB is Guardian-only.
 # Future modules (will uncomment when ready):
 # from . import discord_api  # Discord bot integration
@@ -137,7 +138,7 @@ async def api_endpoint():
             }})
 
         if tool_name == "health_check":
-            return jsonify({"result": {"status": "ok"}})
+            return jsonify({"result": await tools.health()})
 
         # db_query — handled by db_sync directly, not tools.run()
         if tool_name == "db_query":
@@ -158,6 +159,14 @@ async def api_endpoint():
                 days=int(params.get("days") or 0) or None,
             )
             return jsonify({"result": result})
+
+        # openrouter_catalog — real model IDs for [MODELS]
+        if tool_name == "openrouter_catalog":
+            return jsonify({"result": await pricing.catalog(
+                query=str(params.get("query", "")),
+                free_only=bool(params.get("free_only", True)),
+                limit=int(params.get("limit") or 40),
+            )})
 
         # get_model_pricing — auto-fetched costs, .pyfun values win as override
         if tool_name == "get_model_pricing":
@@ -337,6 +346,7 @@ async def start_application(fundaments: Dict[str, Any]) -> None:
     await discord_api.initialize()
     discord_api.register_command_handler("ask", _discord_ask)
     gsc.initialize()
+    skills_db.initialize()
 
     # Auto-Pricing — füllt Kosten aus OpenRouter/LiteLLM nach, .pyfun gewinnt.
     # Läuft im Hintergrund — blockiert den Start NICHT (no fetch = no crash).

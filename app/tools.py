@@ -66,6 +66,32 @@ def initialize() -> None:
 
 
 # =============================================================================
+# Health — shared by the MCP tool and the REST gateway. Cheap, never raises, never blocks long.
+# =============================================================================
+
+async def health() -> Dict[str, Any]:
+    """Hub status incl. PostgreSQL awake-check (short ping), queue depth, providers, integrations."""
+    from . import pricing, discord_api, gsc
+    db = await db_sync.pg_status()
+    try:
+        queue = (await db_sync.persist_queue_stats()).get("queue_depth")
+    except Exception:
+        queue = None
+    degraded = db.get("bridge") == "active" and db.get("state") != "up"
+    return {
+        "status":        "degraded" if degraded else "ok",
+        "service":       "Universal MCP Hub",
+        "database":      db,
+        "persist_queue": queue,
+        "llm_providers":    providers.list_active_llm(),
+        "search_providers": providers.list_active_search(),
+        "pricing_ready":    pricing.is_ready(),
+        "stale_models":     pricing.check_models(),
+        "integrations":     {"discord": discord_api.is_ready(), "gsc": gsc.is_ready()},
+    }
+
+
+# =============================================================================
 # Skills — system prompts as plain Markdown files in app/skills/
 # .pyfun [TOOL.xyz]: system_prompt_file = "my_skill.md"  (combined with system_prompt if both set)
 # DATA only: the file is read as text and sent as system prompt. No code is ever executed
@@ -194,10 +220,29 @@ async def run(
     if tool_cfg.get("system_prompt_file"):
         system_prompt = f"{system_prompt}\n\n{_load_skill(tool_cfg['system_prompt_file'])}".strip()
 
+    # Skill DBs (app/skills_db.py): core rules first, relevant user skills last. Opt-in (costs tokens).
+    if provider_type == "llm":
+        from . import skills_db
+        scfg = config.get_skills()
+
+        def _on(tool_key: str, global_key: str) -> bool:
+            return str(tool_cfg.get(tool_key, scfg.get(global_key, "false"))).lower() == "true"
+
+        if skills_db.is_ready():
+            if _on("use_core", "SKILLS_INJECT_CORE") and skills_db.core_text():
+                system_prompt = f"{skills_db.core_text()}\n\n{system_prompt}".strip()
+            if _on("use_skills", "SKILLS_INJECT_RELEVANT"):
+                ctx = await skills_db.context_for(
+                    str(prompt or ""), int(scfg.get("SKILLS_TOP_K", "3")), int(scfg.get("SKILLS_MAX_CHARS", "3000")))
+                if ctx:
+                    system_prompt = f"{system_prompt}\n\n{ctx}".strip()
+
     # prompt ist für llm/search/db Pflicht — sauberer 400er statt TypeError/500er
     # persist ist die Ausnahme: ohne state_read_key braucht es einen prompt,
     # mit state_read_key liest es stattdessen aus hub_state (Gedächtnis-Pattern).
-    if provider_type in ("llm", "search", "db", "discord") and (prompt is None or str(prompt).strip() == ""):
+    needs_prompt = provider_type in ("llm", "search", "db", "discord") or \
+        (provider_type == "skills" and tool_cfg.get("skills_action") == "search")
+    if needs_prompt and (prompt is None or str(prompt).strip() == ""):
         raise ValueError(
             f"Tool '{tool_name}' requires a 'prompt' parameter (db: the SQL query, discord: the message)."
         )
@@ -206,6 +251,15 @@ async def run(
         raise ValueError(
             "persist_result requires 'prompt' (or set state_read_key in .pyfun [TOOL.persist_result])."
         )
+
+    # --- Skill DBs (read-only): catalog / search ---
+    if provider_type == "skills":
+        from . import skills_db
+        if tool_cfg.get("skills_action") == "catalog":
+            return await skills_db.catalog(scope=str(params.get("scope") or "all"), tag=str(params.get("tag") or ""))
+        return await skills_db.search(
+            query=str(prompt or ""), top_k=params.get("top_k", 3),
+            tag=str(params.get("tag") or ""), scope=str(params.get("scope") or "user"))
 
     # --- Discord post ---
     if provider_type == "discord":
@@ -278,11 +332,16 @@ async def run(
         depth = await db_sync.enqueue_persist(
             table, payload=data, source=source, model=model or "", score=score,
         )
-        flush = await db_sync.flush_persist_queue()  # best effort — sofortiger Versuch
+        # best effort — waits at most PG_REQUEST_WAIT_SEC; a sleeping Neon never blocks the request
+        flush = await db_sync.flush_persist_queue_bounded()
         if flush.get("flushed", 0) > 0:
             status, note = "persisted", "written to PostgreSQL"
         else:
-            status, note = "queued", "restart-safe in SQLite — flushes to PostgreSQL when the bridge becomes active"
+            status = "queued"
+            note = {
+                "pg_slow":    "PostgreSQL is slow/waking up — stays queued (SQLite) and flushes in the background",
+                "pg_backoff": "PostgreSQL unreachable a moment ago — stays queued (SQLite), retried automatically",
+            }.get(flush.get("reason"), "restart-safe in SQLite — flushes to PostgreSQL when the bridge becomes active")
         return {
             "status":        status,
             "target_table":  table,
