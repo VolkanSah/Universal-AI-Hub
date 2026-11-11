@@ -4,7 +4,7 @@
 # Discord Integration — Modular API layer (REST + Interactions Endpoint)
 # Universal My AI HUB (Sandboxed) - based on PyFundaments Architecture
 # Copyright 2026 - Volkan Kücükbudak
-# This file is under GPL License V. 3 + ESOL 2.1
+# This file is under AGPL License V. 3 + ESOL 2.1
 # Repo: https://github.com/VolkanSah/Multi-LLM-API-Gateway
 # =============================================================================
 # ARCHITECTURE NOTE:
