@@ -25,9 +25,12 @@ tags: pdf, dokument, extraktion
 ---
 
 
-Im Hub:
+Im Hub oder local 
 from secure_vectorizer import LocalSkillVectorEngine
+# Windows
 engine = LocalSkillVectorEngine(target_dir=r"C:\\pfad\\zu\\skills")
+# or linux
+engine = LocalSkillVectorEngine(target_dir=r"/pfad/zu/skills")
 engine.build()
 engine.catalog()                                   # Kurzliste fuer die KI
 for hit in engine.search("agent", top_k=3, tag="python"):
