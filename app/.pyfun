@@ -37,17 +37,24 @@ HUB_HOST            = "0.0.0.0"
 HUB_PORT            = "7860"
 HUB_MODE            = "mcp"
 HUB_SPACE_URL       = ""
+
+# Optional Token-Schutz für /api, /crypto und /mcp (siehe app/auth.py).
+# Hier steht nur der NAME der ENV-Variable — der Token selbst kommt in .env / Space-Secret.
+# Variable nicht gesetzt = Schutz AUS (Hub verhält sich wie bisher).
+# Client sendet:  X-Hub-Token: <token>   oder   Authorization: Bearer <token>
+HUB_AUTH_ENV        = "HUB_API_TOKEN"
 [HUB_END]
 
 # =============================================================================
 # HUB_LIMITS — Request & retry behavior
 # =============================================================================
 [HUB_LIMITS]
-MAX_PARALLEL_REQUESTS   = "5"
-RETRY_COUNT             = "3"
-RETRY_DELAY_SEC         = "2"
+MAX_PARALLEL_REQUESTS   = "5"     # gleichzeitige Provider-Calls (Semaphore)
+RETRY_COUNT             = "3"     # Versuche pro Provider (inkl. erstem) bei 429/5xx/Verbindungsfehler
+RETRY_DELAY_SEC         = "2"     # Pause zwischen den Versuchen; Timeouts werden NICHT wiederholt
 REQUEST_TIMEOUT_SEC     = "60"
 SEARCH_TIMEOUT_SEC      = "30"
+MAX_TOKENS_CAP          = "8192"  # harte Obergrenze für max_tokens pro Call (0 = aus)
 [HUB_LIMITS_END]
 
 # =============================================================================
@@ -59,14 +66,26 @@ SEARCH_TIMEOUT_SEC      = "30"
 # ── LLM Providers ─────────────────────────────────────────────────────────────
 [LLM_PROVIDERS]
 
+  # ───────────────────────────────────────────────────────────────────────────
+  # type = welcher Handler den Provider spricht:
+  #   "openai_compat" → generisch (/chat/completions) — KEIN Code nötig, nur dieser Block
+  #   "anthropic" | "gemini" → eigene Klassen in providers.py
+  # Nur für openai_compat (alles optional):
+  #   auth_header = "Authorization" (Default) | auth_scheme = "Bearer" (Default, "" = Key pur)
+  #   chat_path   = "/chat/completions" (Default)
+  #   header.<Name> = "..."   Extra-Header. Platzhalter: {key} = API-Key,
+  #                           {env:NAME|fallback} = Wert aus ENV (mit Fallback)
+  # Modelle gehören NICHT hierher, sondern nach [MODELS] (Name = echte API-ID).
+  # ───────────────────────────────────────────────────────────────────────────
 
   #  customs LLM
   [LLM_PROVIDER.smollm]
   active        = "true"
+  type          = "openai_compat"
   base_url      = "https://codey-lab-smollm2-customs.hf.space/v1"
   env_key       = "SMOLLM_API_KEY"
+  header.X-IP-Token = "{key}"
   default_model = "smollm2-360m"
-  models        = "smollm2-360m, codey-lab/model.universal-mcp-hub"
   fallback_to   = "gemini"
   [LLM_PROVIDER.smollm_END]
 
@@ -74,62 +93,74 @@ SEARCH_TIMEOUT_SEC      = "30"
 
   [LLM_PROVIDER.anthropic]
   active              = "true"
+  type                = "anthropic"
   base_url            = "https://api.anthropic.com/v1"
   env_key             = "ANTHROPIC_API_KEY"
   api_version_header  = "2023-06-01"
-  default_model       = "claude-haiku-4-5-20251001"
-  models              = "claude-opus-4-6, claude-sonnet-4-6, claude-haiku-4-5-20251001"
-  supports_cache   = "true"
+  default_model       = "claude-haiku-5-5"
+  supports_cache      = "true"
   fallback_to         = "gemini"
   [LLM_PROVIDER.anthropic_END]
 
   [LLM_PROVIDER.gemini]
   active        = "true"
+  type          = "gemini"
   base_url      = "https://generativelanguage.googleapis.com/v1beta"
   env_key       = "GEMINI_API_KEY"
   default_model = "gemini-2.5-flash"
-  models        = "gemini-2.0-flash, gemini-2.5-flash, gemini-2.5-flash-lite, gemini-3.1-flash-lite-preview, gemini-3-flash-preview, gemini-3.1-pro-preview"
   supports_cache = "true"
   fallback_to   = "openrouter"
   [LLM_PROVIDER.gemini_END]
 
   [LLM_PROVIDER.openrouter]
   active              = "true"
+  type                = "openai_compat"
   base_url            = "https://openrouter.ai/api/v1"
   env_key             = "OPENROUTER_API_KEY"      # → .env: OPENROUTER_API_KEY=sk-or-...
+  header.HTTP-Referer = "{env:APP_URL|https://huggingface.co}"
+  header.X-Title      = "{env:HUB_NAME|Universal MCP Hub}"
   default_model       = "nvidia/nemotron-nano-9b-v2:free"
-  models              = "meta-llama/llama-3-8b-instruct, mistralai/mistral-7b-instruct, nvidia/nemotron-nano-9b-v2:free, google/gemma-3-27b-it:free, openai/gpt-oss-20b:free, mistralai/Mistral-7B-Instruct-v0.3, meta-llama/Llama-3.3-70B-Instruct"
-  fallback_to         = "huggingface"                      
+  fallback_to         = "huggingface"
   [LLM_PROVIDER.openrouter_END]
 
   [LLM_PROVIDER.huggingface]
   active             = "true"
+  type               = "openai_compat"
+  # TODO prüfen: HF hat (soweit ich weiß) auf https://router.huggingface.co/v1 umgestellt
   base_url           = "https://api-inference.huggingface.co/v1"
   env_key            = "HF_TOKEN"                # → .env: HF_TOKEN=hf_...
-  default_model = "Qwen/Qwen2.5-Coder-32B-Instruct"
-  models        = "Qwen/Qwen2.5-Coder-32B-Instruct, meta-llama/Llama-3.1-8B-Instruct, mistralai/Mistral-Nemo-Instruct-2407, Qwen/Qwen2.5-72B-Instruct"
-  
+  default_model      = "Qwen/Qwen2.5-Coder-32B-Instruct"
   fallback_to        = "smollm" # ← last in chain, no further fallback
   [LLM_PROVIDER.huggingface_END]
 
-  # ── Add more LLM providers below ──────────────────────────────────────────
+  # ── Neuer OpenAI-kompatibler Provider = NUR so ein Block + Key in .env ─────
+  # (Beispiele zum Einkommentieren — kein Python nötig. Passende Modelle in [MODELS] eintragen!)
   # [LLM_PROVIDER.mistral]
-  # active            = "false"
+  # active            = "true"
+  # type              = "openai_compat"
   # base_url          = "https://api.mistral.ai/v1"
   # env_key           = "MISTRAL_API_KEY"
-  # default_model     = "mistral-large-latest"
-  # models            = "mistral-large-latest, mistral-small-latest"
+  # default_model     = "mistral-small-latest"
   # fallback_to       = ""
   # [LLM_PROVIDER.mistral_END]
 
   # [LLM_PROVIDER.openai]
-  # active            = "false"
+  # active            = "true"
+  # type              = "openai_compat"
   # base_url          = "https://api.openai.com/v1"
   # env_key           = "OPENAI_API_KEY"
-  # default_model     = "gpt-4o"
-  # models            = "gpt-4o, gpt-4o-mini, gpt-3.5-turbo"
+  # default_model     = "gpt-4o-mini"
   # fallback_to       = ""
   # [LLM_PROVIDER.openai_END]
+
+  # [LLM_PROVIDER.xai]
+  # active            = "true"
+  # type              = "openai_compat"
+  # base_url          = "https://api.x.ai/v1"
+  # env_key           = "XAI_API_KEY"
+  # default_model     = "grok-4"
+  # fallback_to       = ""
+  # [LLM_PROVIDER.xai_END]
 
 [LLM_PROVIDERS_END]
 
@@ -154,6 +185,20 @@ SEARCH_TIMEOUT_SEC      = "30"
   include_answer      = "true"                    # AI-synthesized answer
   fallback_to         = ""
   [SEARCH_PROVIDER.tavily_END]
+
+  # Keyless Notfall-Fallback (liest die öffentliche HTML-Seite — es gibt KEINE offizielle DDG-API,
+  # daher fragil + bewusst "sanft": globaler Cooldown, kein Retry, ehrlicher User-Agent).
+  # Aktivieren: active = "true" UND bei tavily  fallback_to = "duckduckgo"
+  # (ungetestet gegen das echte DuckDuckGo — erst ausprobieren!)
+  [SEARCH_PROVIDER.duckduckgo]
+  active              = "false"
+  requires_key        = "false"                   # kein API-Key nötig
+  base_url            = "https://html.duckduckgo.com/html/"
+  min_interval_sec    = "300"                     # mind. 5 Min zwischen zwei Anfragen
+  default_results     = "5"
+  max_results         = "10"
+  fallback_to         = ""
+  [SEARCH_PROVIDER.duckduckgo_END]
 
   # ── Add more search providers below ───────────────────────────────────────
   # [SEARCH_PROVIDER.serper]
@@ -195,10 +240,23 @@ SEARCH_TIMEOUT_SEC      = "30"
 # =============================================================================
 [MODELS]
 
+  # ───────────────────────────────────────────────────────────────────────────
+  # REGELN (damit nichts mehr veraltet):
+  #  - Block-Name = ECHTE API-ID so wie der Provider sie erwartet
+  #    (OpenRouter: "vendor/name[:free]", HF: "Org/Name", Anthropic/Gemini: wie in der API)
+  #  - provider = Pflicht. Hat ein Tool nur ein model (ohne provider), nimmt der Hub
+  #    den Provider von hier.
+  #  - context_tokens / max_output_tokens / cost_* NICHT pflegen — [PRICING] holt sie
+  #    live aus OpenRouter + LiteLLM. Manuelle Werte gewinnen IMMER; nutze sie nur für
+  #    das, was nur du weißt (eigener Server, Sonderkonditionen). max_output_tokens
+  #    begrenzt zusätzlich die Antwortlänge (Clamp).
+  #  - requests_per_min/day = dein Account-Limit, wird nur angezeigt, NICHT erzwungen.
+  #  - OpenRouter-Modelle, die es im Live-Katalog nicht mehr gibt, meldet der Hub
+  #    beim Pricing-Refresh als "stale_models" (Log + list_active_tools + refresh_pricing).
+  # ───────────────────────────────────────────────────────────────────────────
+
   [MODEL.claude-opus-4-6]
   provider            = "anthropic"
-  context_tokens      = "200000"
-  max_output_tokens   = "32000"
   requests_per_min    = "5"
   requests_per_day    = "300"
   capabilities        = "text, code, analysis, vision"
@@ -206,8 +264,6 @@ SEARCH_TIMEOUT_SEC      = "30"
 
   [MODEL.claude-sonnet-4-6]
   provider            = "anthropic"
-  context_tokens      = "200000"
-  max_output_tokens   = "16000"
   requests_per_min    = "50"
   requests_per_day    = "1000"
   capabilities        = "text, code, analysis, vision"
@@ -215,8 +271,6 @@ SEARCH_TIMEOUT_SEC      = "30"
 
   [MODEL.claude-haiku-4-5-20251001]
   provider            = "anthropic"
-  context_tokens      = "200000"
-  max_output_tokens   = "8000"
   requests_per_min    = "50"
   requests_per_day    = "2000"
   capabilities        = "text, code, fast"
@@ -224,8 +278,6 @@ SEARCH_TIMEOUT_SEC      = "30"
 
   [MODEL.gemini-3.1-flash-lite-preview]
   provider            = "gemini"
-  context_tokens      = "1000000"
-  max_output_tokens   = "8192"
   requests_per_min    = "15"
   requests_per_day    = "1000"
   capabilities        = "text, code, vision, fast, cheap"
@@ -233,8 +285,6 @@ SEARCH_TIMEOUT_SEC      = "30"
 
   [MODEL.gemini-3-flash-preview]
   provider            = "gemini"
-  context_tokens      = "1000000"
-  max_output_tokens   = "8192"
   requests_per_min    = "10"
   requests_per_day    = "1000"
   capabilities        = "text, code, vision, audio, frontier"
@@ -242,8 +292,6 @@ SEARCH_TIMEOUT_SEC      = "30"
 
   [MODEL.gemini-3.1-pro-preview]
   provider            = "gemini"
-  context_tokens      = "1000000"
-  max_output_tokens   = "64000"
   requests_per_min    = "5"
   requests_per_day    = "1000"
   capabilities        = "text, code, vision, audio, reasoning, agents"
@@ -251,8 +299,6 @@ SEARCH_TIMEOUT_SEC      = "30"
 
   [MODEL.gemini-2.5-flash]
   provider            = "gemini"
-  context_tokens      = "1000000"
-  max_output_tokens   = "8192"
   requests_per_min    = "15"
   requests_per_day    = "1500"
   capabilities        = "text, code, vision, audio"
@@ -260,97 +306,58 @@ SEARCH_TIMEOUT_SEC      = "30"
 
   [MODEL.gemini-2.5-flash-lite]
   provider            = "gemini"
-  context_tokens      = "1000000"
-  max_output_tokens   = "8192"
   requests_per_min    = "15"
   requests_per_day    = "1500"
   capabilities        = "text, code, vision, audio"
   [MODEL.gemini-2.5-flash-lite_END]
 
-
   [MODEL.gemini-2.0-flash]
   provider            = "gemini"
-  context_tokens      = "1000000"
-  max_output_tokens   = "8192"
   requests_per_min    = "15"
   requests_per_day    = "1500"
   capabilities        = "text, code, vision, audio"
   [MODEL.gemini-2.0-flash_END]
 
-  
-  [MODEL.mistral-7b-instruct]
+  [MODEL.mistralai/mistral-7b-instruct]
   provider            = "openrouter"
-  context_tokens      = "32000"
-  max_output_tokens   = "4096"
-  requests_per_min    = "60"
-  requests_per_day    = "10000"
   capabilities        = "text, code, fast, cheap"
-  [MODEL.mistral-7b-instruct_END]
-  
-  [MODEL.dolphin-mistral-24b-venice-edition]
+  [MODEL.mistralai/mistral-7b-instruct_END]
+
+  [MODEL.cognitivecomputations/dolphin-mistral-24b-venice-edition:free]
   provider            = "openrouter"
-  context_tokens      = "32768"
-  max_output_tokens   = "4096"
-  requests_per_min    = ""
-  requests_per_day    = ""
   capabilities        = "uncensored, text, code, fast, very cheap"
-  [MODEL.dolphin-mistral-24b-venice-edition_END]
+  [MODEL.cognitivecomputations/dolphin-mistral-24b-venice-edition:free_END]
 
-  [MODEL.nvidia-nemotron-nano-9b-v2]
+  [MODEL.nvidia/nemotron-nano-9b-v2:free]
   provider            = "openrouter"
-  context_tokens      = "131072"
-  max_output_tokens   = "4096"
-  requests_per_min    = ""
-  requests_per_day    = ""
   capabilities        = "text, code, reasoning, fast, free"
-  [MODEL.nvidia-nemotron-nano-9b-v2_END]
+  [MODEL.nvidia/nemotron-nano-9b-v2:free_END]
 
-  [MODEL.gemma-3-27b-it]
+  [MODEL.google/gemma-3-27b-it:free]
   provider            = "openrouter"
-  context_tokens      = "131072"
-  max_output_tokens   = "8192"
-  requests_per_min    = ""
-  requests_per_day    = ""
   capabilities        = "text, code, vision, multilingual, free"
-  [MODEL.gemma-3-27b-it_END]
+  [MODEL.google/gemma-3-27b-it:free_END]
 
-  [MODEL.gpt-oss-20b]
+  [MODEL.openai/gpt-oss-20b:free]
   provider            = "openrouter"
-  context_tokens      = "128000"
-  max_output_tokens   = "4096"
-  requests_per_min    = ""
-  requests_per_day    = ""
   capabilities        = "text, code, free"
-  [MODEL.gpt-oss-20b_END]
+  [MODEL.openai/gpt-oss-20b:free_END]
 
-  [MODEL.deephermes-3-llama-3-8b-preview]
+  [MODEL.nousresearch/deephermes-3-llama-3-8b-preview:free]
   provider            = "openrouter"
-  context_tokens      = "131072"
-  max_output_tokens   = "4096"
-  requests_per_min    = ""
-  requests_per_day    = ""
   capabilities        = "text, code, reasoning, uncensored, free"
-  [MODEL.deephermes-3-llama-3-8b-preview_END]
+  [MODEL.nousresearch/deephermes-3-llama-3-8b-preview:free_END]
 
-  [MODEL.Mistral-7B-Instruct-v0.3]
-  provider            = "openrouter"
-  context_tokens      = "32768"
-  max_output_tokens   = "4096"
-  requests_per_min    = "60"
-  requests_per_day    = "10000"
+  [MODEL.mistralai/Mistral-7B-Instruct-v0.3]
+  provider            = "huggingface"
   capabilities        = "text, code, fast, cheap"
-  [MODEL.Mistral-7B-Instruct-v0.3_END]
+  [MODEL.mistralai/Mistral-7B-Instruct-v0.3_END]
 
-  [MODEL.Llama-3.3-70B-Instruct]
-  provider            = "openrouter"
-  context_tokens      = "131072"
-  max_output_tokens   = "8192"
-  requests_per_min    = "60"
-  requests_per_day    = "10000"
+  [MODEL.meta-llama/Llama-3.3-70B-Instruct]
+  provider            = "huggingface"
   capabilities        = "text, code, reasoning, multilingual"
-  [MODEL.Llama-3.3-70B-Instruct_END]
+  [MODEL.meta-llama/Llama-3.3-70B-Instruct_END]
 
-  # customs llms
   [MODEL.smollm2-360m]
   provider           = "smollm"
   context_tokens     = "8192"
@@ -373,6 +380,46 @@ SEARCH_TIMEOUT_SEC      = "30"
   capabilities       = "text, assistant, navigation, free, custom, finetuned"
   [MODEL.codey-lab/model.universal-mcp-hub_END]
 
+  [MODEL.claude-opus-5-5]
+  provider            = "anthropic"
+  capabilities        = "text, code, analysis, vision"
+  [MODEL.claude-opus-5-5_END]
+
+  [MODEL.claude-sonnet-5-5]
+  provider            = "anthropic"
+  capabilities        = "text, code, analysis, vision"
+  [MODEL.claude-sonnet-5-5_END]
+
+  [MODEL.claude-haiku-5-5]
+  provider            = "anthropic"
+  capabilities        = "text, code, fast"
+  [MODEL.claude-haiku-5-5_END]
+
+  [MODEL.meta-llama/llama-3-8b-instruct]
+  provider            = "openrouter"
+  capabilities        = "text, code, fast"
+  [MODEL.meta-llama/llama-3-8b-instruct_END]
+
+  [MODEL.Qwen/Qwen2.5-Coder-32B-Instruct]
+  provider            = "huggingface"
+  capabilities        = "text, code"
+  [MODEL.Qwen/Qwen2.5-Coder-32B-Instruct_END]
+
+  [MODEL.meta-llama/Llama-3.1-8B-Instruct]
+  provider            = "huggingface"
+  capabilities        = "text, code, fast"
+  [MODEL.meta-llama/Llama-3.1-8B-Instruct_END]
+
+  [MODEL.mistralai/Mistral-Nemo-Instruct-2407]
+  provider            = "huggingface"
+  capabilities        = "text, code, multilingual"
+  [MODEL.mistralai/Mistral-Nemo-Instruct-2407_END]
+
+  [MODEL.Qwen/Qwen2.5-72B-Instruct]
+  provider            = "huggingface"
+  capabilities        = "text, code, reasoning, multilingual"
+  [MODEL.Qwen/Qwen2.5-72B-Instruct_END]
+
 [MODELS_END]
 
 # =============================================================================
@@ -380,6 +427,10 @@ SEARCH_TIMEOUT_SEC      = "30"
 # Tools are registered in mcp.py only if their provider ENV key exists!
 # =============================================================================
 [TOOLS]
+
+  # Optional pro Tool (llm + search): Antwort-Cache über db_sync.
+  #   cache = "true"  und  cache_ttl_sec = "3600"
+  # Default AUS (LLM-Antworten sind nicht deterministisch).
 
   [TOOL.llm_complete]
   active              = "true"
@@ -496,6 +547,24 @@ SEARCH_TIMEOUT_SEC      = "30"
   description = "List allowed ShellMaster commands from registry"
   [TOOL.shellmaster_commands_END]
 
+  # ── Integrationen (alle inaktiv, bis [DISCORD] / [GSC] unten aktiv sind) ──────
+  [TOOL.discord_post]
+  active              = "false"
+  description         = "Post a message to Discord (default channel / webhook)"
+  provider_type       = "discord"
+  [TOOL.discord_post_END]
+
+  [TOOL.gsc_query]
+  active              = "false"
+  description         = "Google Search Console: top queries/pages of a property (read-only)"
+  provider_type       = "gsc"
+  [TOOL.gsc_query_END]
+
+  # ── Skills: System-Prompt aus Markdown-Datei (app/skills/*.md) ────────────────
+  # An jedem LLM-Tool möglich, zusätzlich zu system_prompt:
+  #   system_prompt_file = "mein_skill.md"
+  # Es wird nur TEXT gelesen — aus app/skills/ wird nie Code ausgeführt.
+
 [TOOLS_END]
 
 # =============================================================================
@@ -509,6 +578,41 @@ MAX_CACHE_ENTRIES   = "1000"
 PERSIST_QUEUE_MAX   = "500"                      # restart-safe queue: SQLite → PostgreSQL
 PERSIST_FLUSH_INTERVAL_SEC = "60"                # retry interval for the PG flusher
 [DB_SYNC_END]
+
+
+# =============================================================================
+# DISCORD — Integration (app/discord_api.py). Secrets NUR in .env, hier nur ENV-NAMEN.
+# Aktivieren: DISCORD_ACTIVE = "true"  +  Tool [TOOL.discord_post] active = "true".
+# ⚠ Vorher HUB_API_TOKEN setzen — sonst kann jeder, der /api erreicht, über den Bot posten.
+# /discord (Interactions) braucht eine ÖFFENTLICHE URL (privater HF-Space = für Discord unerreichbar).
+# =============================================================================
+[DISCORD]
+DISCORD_ACTIVE              = "false"
+DISCORD_ENV_KEY             = "DISCORD_BOT_TOKEN"        # → .env: Bot-Token
+DISCORD_WEBHOOK_ENV_KEY     = "DISCORD_WEBHOOK_URL"      # → .env: Webhook-URL (die URL ist das Secret)
+DISCORD_APP_ID              = ""                         # Dev Portal → Application ID (öffentlich)
+DISCORD_APP_PUBLIC_KEY      = ""                         # Dev Portal → Public Key (öffentlich, nur Verify)
+DISCORD_DEFAULT_CHANNEL     = ""                         # Channel-ID für Posts ohne channel_id
+DISCORD_ALLOWED_CHANNELS    = ""                         # kommagetrennt — nur diese channel_id darf ein Client wählen
+DISCORD_ALLOWED_GUILDS      = ""                         # kommagetrennt — leer = /ask auf jedem Server, auf dem der Bot ist
+DISCORD_TIMEOUT_SEC         = "15"
+[DISCORD_END]
+
+
+# =============================================================================
+# GSC — Google Search Console (app/gsc.py), read-only. Optionale Pakete:
+#   pip install google-api-python-client google-auth
+# Credentials: ENV-Variable GSC_CREDENTIALS = Service-Account-JSON (Text) ODER Dateipfad.
+# Die Service-Account-Mail muss in der Search Console als Nutzer der Property eingetragen sein.
+# Aktivieren: GSC_ACTIVE = "true"  +  Tool [TOOL.gsc_query] active = "true".
+# =============================================================================
+[GSC]
+GSC_ACTIVE                  = "false"
+GSC_ENV_KEY                 = "GSC_CREDENTIALS"
+GSC_DEFAULT_PROPERTY        = ""                         # z.B. "sc-domain:example.com"
+GSC_API_NAME                = "searchconsole"            # (alt: "webmasters" / "v3")
+GSC_API_VERSION             = "v1"
+[GSC_END]
 
 # =============================================================================
 # PRICING — Auto model costs (OpenRouter + LiteLLM)
