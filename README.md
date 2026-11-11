@@ -36,13 +36,13 @@ No key → no tool → no crash → no exposed secrets
 ---
 
 <details>
-<summary><b>🧠 Usernote: how this was actually built (no vibecode — or am I lying? 😄)</b></summary>
+<summary><b>🧠 Usernote: how this was actually built (no vibecode - or am I lying? 😄)</b></summary>
+     
+I created this code on my own. And it took a toll on me - I mean really took a toll. We're not talking about my code not working, but more like I've been looking at my own design for so long that my brain is a mess. That's when AI came into the picture - not to do the coding for me, but to help me make sense of my thoughts and organize the ideas that were already floating around in my head.
 
-I wrote this myself. And I broke myself doing it — properly. Not "my code doesn't run" broken, but "I've been staring at my own architecture for months and my brain is soup" broken. At that point AI stepped in — not to write my project, but to help me untangle my thoughts and shape what was already in my head.
+So, is this something called vibecoding? **No**, it's not. Vibecoding is when you send off code without really understanding what it does, and just hope it works out. But I know exactly what's going on here - every single line, even the weird parts. I made some specific choices, like using the guardian pattern, setting up a sandbox, and creating a `.pyfun` file that's the single source of truth. I also followed the no-key-no-tool rule. These were all my decisions, made before any AI even got involved. My coding style is pretty unique, and you'll notice it as soon as you look at the source code. The AI was more like a partner that helped me out, typing fast and sometimes making mistakes that I had to fix.
 
-Is that vibecoding? **No.** Vibecoding is shipping code you don't understand and hoping for the best. I understand every line here — including the weird ones. The guardian pattern, the sandbox, the `.pyfun` single-source-of-truth, the no-key-no-tool rule: my decisions, made before any AI touched anything. I code differently than everyone else — you'll see it the moment you read the source. The AI was a sparring partner with fast fingers (and, to be fair, the occasional bug that I then had to hunt).
-
-...or am I lying? Don't take my word for it. Read the code.
+...or am I just making it up? Don't just listen to me, go check the code for yourself.
 
 </details>
 
