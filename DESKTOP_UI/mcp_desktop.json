@@ -1,0 +1,15 @@
+{
+  "hf_token": "",
+  "hub_token": "",
+  "hub_url": "",
+  "default_provider": "",
+  "default_model": "",
+  "default_tool": "llm_complete",
+  "font_size": 14,
+  "chats": {
+    "2026-11-11 20:33:44": {
+      "title": "Chat 2026-11-11 20:33:44",
+      "messages": []
+    }
+  }
+}
