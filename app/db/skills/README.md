@@ -13,8 +13,8 @@ tags: core
 
 
 # User skills
-folder:  /app/db/skills/user/*
-autoload: true
-hub_tools: `show_skills`
-vector_files: *.db
-human_readable: *.md
+- folder:  /app/db/skills/user/*
+- autoload: true
+- hub_tools: `show_skills`
+- vector_files: *.db
+- human_readable: *.md
