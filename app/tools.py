@@ -23,6 +23,7 @@
 
 import logging
 import os
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from . import config     # reads app/.pyfun — single source of truth
@@ -54,6 +55,72 @@ def initialize() -> None:
     global _registry
     _registry = config.get_active_tools()
     logger.info(f"Tools loaded: {list(_registry.keys())}")
+    for tname, tcfg in _registry.items():
+        skill = tcfg.get("system_prompt_file", "")
+        if skill:
+            try:
+                _load_skill(skill)
+                logger.info(f"Tool '{tname}': skill '{skill}' loaded.")
+            except ValueError as e:
+                logger.warning(f"Tool '{tname}': {e}")
+
+
+# =============================================================================
+# Skills — system prompts as plain Markdown files in app/skills/
+# .pyfun [TOOL.xyz]: system_prompt_file = "my_skill.md"  (combined with system_prompt if both set)
+# DATA only: the file is read as text and sent as system prompt. No code is ever executed
+# or imported from app/skills/ — dropping a file there cannot run anything.
+# =============================================================================
+_SKILLS_DIR = Path(__file__).resolve().parent / "skills"
+_SKILL_MAX_CHARS = 20000
+_skill_cache: Dict[str, str] = {}
+
+
+def _load_skill(name: str) -> str:
+    """Read app/skills/<name> (.md/.txt only, no path tricks). Cached until restart."""
+    name = (name or "").strip()
+    if not name:
+        return ""
+    if name in _skill_cache:
+        return _skill_cache[name]
+    path = (_SKILLS_DIR / name).resolve()
+    if _SKILLS_DIR not in path.parents or path.suffix.lower() not in (".md", ".txt"):
+        raise ValueError(f"system_prompt_file '{name}' must be a .md/.txt file inside app/skills/")
+    try:
+        text = path.read_text(encoding="utf-8").strip()[:_SKILL_MAX_CHARS]
+    except OSError:
+        raise ValueError(f"system_prompt_file '{name}' not found in app/skills/") from None
+    _skill_cache[name] = text
+    return text
+
+
+# =============================================================================
+# Discord post (hub → Discord). Inbound (/discord route, /ask) lives in app.py.
+# =============================================================================
+
+async def _run_discord(content: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Post `content` to Discord. mode: "auto" (default) | "webhook" | "bot".
+    A channel_id override is only accepted if listed in [DISCORD] DISCORD_ALLOWED_CHANNELS
+    (or equals DISCORD_DEFAULT_CHANNEL) — a hub client must not be able to make the bot
+    write into arbitrary channels.
+    """
+    from . import discord_api
+    cfg     = config.get_discord()
+    allowed = {c.strip() for c in str(cfg.get("DISCORD_ALLOWED_CHANNELS", "")).split(",") if c.strip()}
+    if cfg.get("DISCORD_DEFAULT_CHANNEL"):
+        allowed.add(str(cfg["DISCORD_DEFAULT_CHANNEL"]).strip())
+
+    channel = str(params.get("channel_id") or "").strip()
+    if channel and channel not in allowed:
+        return {"ok": False, "error": "channel_id not allowed — add it to DISCORD_ALLOWED_CHANNELS in .pyfun"}
+
+    mode = str(params.get("mode") or "auto").lower()
+    if mode == "webhook" or (mode == "auto" and not channel and discord_api.get_status()["webhook_set"]):
+        r = await discord_api.send_webhook(str(content))
+    else:
+        r = await discord_api.send_message(channel, str(content))
+    return {"ok": bool(r.get("ok")), "error": r.get("error"), "message_id": (r.get("data") or {}).get("id")}
 
 
 # =============================================================================
@@ -124,18 +191,34 @@ async def run(
     provider_type    = tool_cfg.get("provider_type", "llm")
     default_provider = provider_name or tool_cfg.get("default_provider", "")
     system_prompt    = tool_cfg.get("system_prompt", "")
+    if tool_cfg.get("system_prompt_file"):
+        system_prompt = f"{system_prompt}\n\n{_load_skill(tool_cfg['system_prompt_file'])}".strip()
 
     # prompt ist für llm/search/db Pflicht — sauberer 400er statt TypeError/500er
     # persist ist die Ausnahme: ohne state_read_key braucht es einen prompt,
     # mit state_read_key liest es stattdessen aus hub_state (Gedächtnis-Pattern).
-    if provider_type in ("llm", "search", "db") and (prompt is None or str(prompt).strip() == ""):
+    if provider_type in ("llm", "search", "db", "discord") and (prompt is None or str(prompt).strip() == ""):
         raise ValueError(
-            f"Tool '{tool_name}' requires a 'prompt' parameter (for db tools: the SQL query)."
+            f"Tool '{tool_name}' requires a 'prompt' parameter (db: the SQL query, discord: the message)."
         )
     if provider_type == "persist" and not tool_cfg.get("state_read_key", "") \
             and (prompt is None or str(prompt).strip() == ""):
         raise ValueError(
             "persist_result requires 'prompt' (or set state_read_key in .pyfun [TOOL.persist_result])."
+        )
+
+    # --- Discord post ---
+    if provider_type == "discord":
+        return await _run_discord(prompt, params)
+
+    # --- Google Search Console (optional libs, see app/gsc.py) ---
+    if provider_type == "gsc":
+        from . import gsc
+        return await gsc.query(
+            property_url=str(params.get("property_url") or prompt or ""),
+            days_back=params.get("days_back", 30),
+            row_limit=params.get("row_limit", 10),
+            dimension=params.get("dimension", "query"),
         )
 
     # Opt-in response cache per tool: cache = "true" (+ cache_ttl_sec) in .pyfun [TOOL.xyz]

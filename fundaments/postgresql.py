@@ -4,6 +4,7 @@
 # Repo: https://github.com/VolkanSah/PyFundaments
 # fundaments/postgresql.py
 import os
+import asyncio
 import logging
 import asyncpg
 import ssl
@@ -122,8 +123,12 @@ async def init_db_pool(dsn_url: Optional[str] = None) -> Optional[asyncpg.Pool]:
             dsn=secured_dsn,
             min_size=1,
             max_size=10,
-            timeout=5,
+            # Neon scale-to-zero: suspended compute can need >5 s to wake up. This timeout also
+            # applies to every pool RECONNECT (was 5 → "Failed to restore the pool connection floor").
+            timeout=20,
             command_timeout=30,
+            # Neon suspends after ~5 min idle → drop idle connections ourselves before it kills them.
+            max_inactive_connection_lifetime=240,
             ssl=ssl_context
         )
         # Post-init checks
@@ -144,36 +149,69 @@ async def close_db_pool():
         _db_pool = None
         logger.info("Database pool closed successfully.")
 
+# Connection-level failures (dead/suspended Neon connection, wake-up timeout). Built defensively
+# so a missing attribute in some asyncpg version cannot break the import.
+_CONN_ERRORS = tuple(
+    e for e in (
+        getattr(asyncpg, "PostgresConnectionError", None),   # SQLSTATE class 08 (e.g. 08003, 08006)
+        getattr(asyncpg, "InterfaceError", None),            # "connection is closed" etc.
+        asyncio.TimeoutError,                                # connect/command timeout
+        OSError,                                             # socket-level (reset, refused, DNS)
+    ) if e
+)
+
+
 async def execute_secured_query(query: str, *params, fetch_method='fetch'):
     """
     Executes a parameterized query with integrated security checks.
+
+    Neon resilience: on a connection-level failure the query is retried ONCE with a fresh
+    connection (the pool discards dead ones). Safe by construction:
+      - failure while OBTAINING a connection (nothing was sent yet) → retried for every fetch_method
+      - failure DURING the statement → retried only for reads (fetch/fetchrow); an INSERT/UPDATE
+        ('execute') is NOT repeated — it may already have been committed.
     """
     global _db_pool
     if not _db_pool:
         raise RuntimeError("Database pool not initialized")
 
-    try:
-        async with _db_pool.acquire() as conn:
-            if fetch_method == 'fetch':
-                return await conn.fetch(query, *params)
-            elif fetch_method == 'fetchrow':
-                return await conn.fetchrow(query, *params)
-            elif fetch_method == 'execute':
-                return await conn.execute(query, *params)
+    for attempt in (1, 2):
+        in_statement = False
+        try:
+            async with _db_pool.acquire() as conn:
+                in_statement = True
+                if fetch_method == 'fetch':
+                    return await conn.fetch(query, *params)
+                elif fetch_method == 'fetchrow':
+                    return await conn.fetchrow(query, *params)
+                elif fetch_method == 'execute':
+                    return await conn.execute(query, *params)
+                else:
+                    raise ValueError("Invalid fetch_method")
+        except asyncpg.PostgresError as e:
+            sqlstate = getattr(e, 'sqlstate', None)
+            error_type = "Security violation" if sqlstate == '42501' else "Database error"
+
+            if os.getenv('APP_ENV') == 'production':
+                logger.error(f"{error_type} [Code: {sqlstate or '?'}]")
             else:
-                raise ValueError("Invalid fetch_method")
-    except asyncpg.PostgresError as e:
-        error_type = "Security violation" if getattr(e, 'sqlstate', None) == '42501' else "Database error"
-        
-        if os.getenv('APP_ENV') == 'production':
-            logger.error(f"{error_type} [Code: {getattr(e, 'sqlstate', '?')}]")
-        else:
-            logger.error(f"{error_type}: {e}")
-        
-        # Neon: Reconnect if connection terminated (optional)
-        if getattr(e, 'sqlstate', None) == '08006' and 'neon.tech' in (os.getenv("DATABASE_URL") or ''):
-            logger.warning("Neon.tech connection terminated. Restarting pool...")
-            await close_db_pool()
-            await init_db_pool(os.getenv("DATABASE_URL"))
-        
-        raise
+                logger.error(f"{error_type}: {e}")
+
+            # Neon: Reconnect if connection terminated (optional)
+            if sqlstate == '08006' and 'neon.tech' in (os.getenv("DATABASE_URL") or ''):
+                logger.warning("Neon.tech connection terminated. Restarting pool...")
+                await close_db_pool()
+                await init_db_pool(os.getenv("DATABASE_URL"))
+
+            is_conn_error = isinstance(e, _CONN_ERRORS) or str(sqlstate or '').startswith('08')
+            if attempt == 1 and is_conn_error and (not in_statement or fetch_method in ('fetch', 'fetchrow')):
+                logger.warning("Connection error — retrying query once.")
+                continue
+            raise
+        except _CONN_ERRORS as e:
+            # Not a PostgresError: timeout / socket / interface error
+            if attempt == 1 and (not in_statement or fetch_method in ('fetch', 'fetchrow')):
+                logger.warning(f"DB connection problem ({type(e).__name__}) — retrying query once.")
+                continue
+            logger.error(f"DB connection problem ({type(e).__name__}) — giving up.")
+            raise

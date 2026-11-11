@@ -112,6 +112,7 @@ async def initialize() -> None:
     _register_pricing_tools(_mcp)
     _register_db_tools(_mcp)    # db_sync ready — SELECT-only, app/* tables
     _register_persist_tools(_mcp)  # memory orchestration — queue-safe, no PG required
+    _register_integration_tools(_mcp)  # discord_post / gsc_query — only if active in .pyfun
 
     logger.info(f"MCP Hub initialized. Transport: {_transport}")
 
@@ -451,6 +452,66 @@ def _register_db_tools(mcp) -> None:
 # =============================================================================
 # Persist Tools — Gedächtnis-Orchestrierung (SQLite-Queue → PostgreSQL)
 # =============================================================================
+def _register_integration_tools(mcp) -> None:
+    """
+    Optional integrations — registered ONLY if the tool is active in .pyfun AND the module is ready.
+      discord_post → hub posts into Discord (app/discord_api.py, [DISCORD])
+      gsc_query    → Search Console top queries/pages (app/gsc.py, [GSC])
+    """
+    if "discord_post" in tools.list_all():
+        from . import discord_api
+        if discord_api.is_ready():
+            @mcp.tool()
+            async def discord_post(message: str, channel_id: str = "") -> Dict[str, Any]:
+                """
+                Post a message to Discord (max 2000 chars).
+
+                Args:
+                    message:    The text to post.
+                    channel_id: Optional channel — only accepted if listed in DISCORD_ALLOWED_CHANNELS.
+                                Empty = default channel / webhook.
+
+                Returns:
+                    {"ok": bool, "error": str|None, "message_id": str|None}
+                """
+                return await tools.run("discord_post", prompt=message, channel_id=channel_id)
+
+            logger.info("Tool registered: discord_post")
+        else:
+            logger.info("discord_post active in .pyfun but Discord not ready — skipped.")
+
+    if "gsc_query" in tools.list_all():
+        from . import gsc
+        if gsc.is_ready():
+            @mcp.tool()
+            async def gsc_query(
+                property_url: str = "",
+                days_back: int = 30,
+                row_limit: int = 10,
+                dimension: str = "query",
+            ) -> Any:
+                """
+                Google Search Console: top queries (or pages) of a property, read-only.
+
+                Args:
+                    property_url: 'sc-domain:example.com' or 'https://example.com/'. Empty = default property.
+                    days_back:    1-365 days (data lags 2-3 days). Default 30.
+                    row_limit:    1-100 rows. Default 10.
+                    dimension:    query | page | country | device | date. Default: query.
+
+                Returns:
+                    List of {keyword|page|..., clicks, impressions, ctr (%), position}.
+                """
+                return await tools.run(
+                    "gsc_query", property_url=property_url, days_back=days_back,
+                    row_limit=row_limit, dimension=dimension,
+                )
+
+            logger.info("Tool registered: gsc_query")
+        else:
+            logger.info("gsc_query active in .pyfun but GSC not ready — skipped.")
+
+
 def _register_persist_tools(mcp) -> None:
     """
     Register memory-orchestration tools.

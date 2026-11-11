@@ -66,6 +66,8 @@ import time
 import asyncio
 import logging
 import httpx
+from html.parser import HTMLParser
+from urllib.parse import urlparse, parse_qs
 from typing import Optional, Tuple, Dict, Any
 
 from . import config
@@ -621,6 +623,17 @@ class BaseSearchProvider:
                 raise ProviderError(f"HTTP {e.response.status_code} from {safe_url}", e.response.status_code) from None
             return r.json()
 
+    async def _get_text(self, url: str, headers: dict, params: dict) -> str:
+        """Shared HTTP GET returning the raw body (HTML) — sanitized errors."""
+        safe_url = url.split("?")[0]
+        async with httpx.AsyncClient() as client:
+            r = await client.get(url, headers=headers, params=params, timeout=self.timeout)
+            try:
+                r.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                raise ProviderError(f"HTTP {e.response.status_code} from {safe_url}", e.response.status_code) from None
+            return r.text
+
     async def _post(self, url: str, headers: dict, payload: dict) -> dict:
         """Shared HTTP POST with sanitized errors."""
         safe_url = url.split("?")[0]
@@ -724,6 +737,103 @@ class TavilySearchProvider(BaseSearchProvider):
         return "\n\n".join(lines)
 
 
+# --- DuckDuckGo (keyless, gentle last-resort fallback) --------------------------
+class _DDGParser(HTMLParser):
+    """Minimal parser for html.duckduckgo.com result pages (stdlib only, no BeautifulSoup)."""
+    def __init__(self):
+        super().__init__()
+        self.results: list = []
+        self._mode = None
+        self._cur = None
+        self._buf: list = []
+
+    @staticmethod
+    def _unwrap(href: str) -> str:
+        """DDG wraps targets as //duckduckgo.com/l/?uddg=<urlencoded>&rut=… → real URL."""
+        target = (parse_qs(urlparse(href).query).get("uddg") or [href])[0]
+        return "https:" + target if target.startswith("//") else target
+
+    def handle_starttag(self, tag, attrs):
+        if tag != "a":
+            return
+        a   = dict(attrs)
+        cls = (a.get("class") or "").split()
+        if "result__a" in cls:
+            self._cur = {"title": "", "url": self._unwrap(a.get("href") or ""), "snippet": ""}
+            self.results.append(self._cur)
+            self._mode, self._buf = "title", []
+        elif "result__snippet" in cls and self.results:
+            self._cur = self.results[-1]
+            self._mode, self._buf = "snippet", []
+
+    def handle_data(self, data):
+        if self._mode:
+            self._buf.append(data)
+
+    def handle_endtag(self, tag):
+        if tag == "a" and self._mode:
+            self._cur[self._mode] = " ".join("".join(self._buf).split())
+            self._mode = None
+
+
+class DuckDuckGoSearchProvider(BaseSearchProvider):
+    """
+    Keyless search fallback (idea: "GentleSearchProvider").
+
+    DuckDuckGo has NO official search API — this reads the public HTML endpoint, so it is
+    fragile by nature and gentle by design:
+      - global cooldown (min_interval_sec, default 300): called too early it RAISES, so the
+        fallback chain reports an honest failure instead of a fake "result" string
+      - the attempt counts for the cooldown even if it fails (no hammering a blocked endpoint)
+      - honest User-Agent, no evasion tricks, no retries
+      - captcha / layout change = no parsable results = clear error
+
+    .pyfun block (no key needed → requires_key = "false"):
+        [SEARCH_PROVIDER.duckduckgo]
+        active = "false"   requires_key = "false"
+        base_url = "https://html.duckduckgo.com/html/"
+        min_interval_sec = "300"   # optional   user_agent = "..."   # optional
+    """
+    def __init__(self, name: str, cfg: dict):
+        super().__init__(name, cfg)
+        self.base_url     = cfg.get("base_url") or "https://html.duckduckgo.com/html/"
+        self.min_interval = float(cfg.get("min_interval_sec", "300"))
+        self.user_agent   = cfg.get("user_agent") or "UniversalMCPHub/1.0 (+https://github.com/VolkanSah)"
+        self._last_call: Optional[float] = None
+
+    async def search(self, query: str, max_results: int) -> str:
+        now = time.monotonic()
+        if self._last_call is not None and now - self._last_call < self.min_interval:
+            wait = int(self.min_interval - (now - self._last_call))
+            raise ProviderError(f"DuckDuckGo cooldown — wait {wait}s (min_interval_sec={int(self.min_interval)})")
+        self._last_call = now   # counts even if the request fails
+
+        try:
+            html = await self._get_text(
+                self.base_url,
+                headers={
+                    "User-Agent":      self.user_agent,
+                    "Accept":          "text/html,application/xhtml+xml",
+                    "Accept-Language": "de,en-US;q=0.7,en;q=0.3",
+                    "DNT":             "1",
+                },
+                params={"q": query},
+            )
+        except ProviderError as e:
+            raise ProviderError(str(e)) from None   # drop status → never retried (gentle)
+
+        parser = _DDGParser()
+        parser.feed(html)
+        hits = [r for r in parser.results if r["url"]][: self._clip(max_results)]
+        if not hits:
+            raise ProviderError("DuckDuckGo: no parsable results (blocked/captcha or layout changed)")
+
+        lines = [f"[{self.name}] Search results for: '{query}'"]
+        for i, r in enumerate(hits, 1):
+            lines.append(f"{i}. {r['title']}\n   {r['url']}\n   {r['snippet']}")
+        return "\n\n".join(lines)
+
+
 # =============================================================================
 # Search Registry — built from .pyfun [SEARCH_PROVIDERS] at initialize()
 # =============================================================================
@@ -731,6 +841,7 @@ class TavilySearchProvider(BaseSearchProvider):
 _SEARCH_PROVIDER_CLASSES = {
     "brave":  BraveSearchProvider,
     "tavily": TavilySearchProvider,
+    "duckduckgo": DuckDuckGoSearchProvider,   # keyless (requires_key = "false" in .pyfun)
     # "serper": SerperSearchProvider,   # ← uncomment to activate
 }
 
@@ -746,7 +857,8 @@ def _initialize_search() -> None:
     global _search_registry
     for name, cfg in config.get_active_search_providers().items():
         env_key = cfg.get("env_key", "")
-        if not env_key or not os.getenv(env_key):
+        needs_key = str(cfg.get("requires_key", "true")).lower() != "false"
+        if needs_key and (not env_key or not os.getenv(env_key)):
             logger.info(f"Search provider '{name}' skipped — ENV key not set.")
             continue
         cls = _SEARCH_PROVIDER_CLASSES.get(name)

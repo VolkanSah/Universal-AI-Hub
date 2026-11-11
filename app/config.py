@@ -296,3 +296,13 @@ def is_debug() -> bool:
 def get_pricing() -> Dict[str, Any]:
     """Returns [PRICING] section — auto model cost fetching."""
     return get_section("PRICING")
+
+
+def get_discord() -> Dict[str, Any]:
+    """Returns [DISCORD] section — Discord integration (inactive unless DISCORD_ACTIVE = "true")."""
+    return get_section("DISCORD")
+
+
+def get_gsc() -> Dict[str, Any]:
+    """Returns [GSC] section — Google Search Console tool (inactive unless GSC_ACTIVE = "true")."""
+    return get_section("GSC")

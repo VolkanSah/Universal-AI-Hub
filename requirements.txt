@@ -32,3 +32,6 @@ requests
 
 # Alternative PostgreSQL driver (if not using asyncpg)
 #psycopg2-binary
+# Optional — Google Search Console tool (app/gsc.py), nur nötig wenn GSC_ACTIVE = "true":
+# google-api-python-client
+# google-auth

@@ -19,6 +19,7 @@
 #   - Secrets stay in .env → Guardian reads them → never touched by app/*
 # =============================================================================
 from quart import Quart, request, jsonify  # async Flask — ASGI compatible
+import json
 import logging
 from hypercorn.asyncio import serve        # ASGI server — async native, replaces waitress
 from hypercorn.config import Config        # hypercorn config
@@ -39,6 +40,8 @@ from . import tools        # MCP tool definitions + provider mapping — reads a
 from . import db_sync      # Internal SQLite IPC — app/* state & communication
 from . import shellmaster  # ShellMaster 2.0 — safe shell assistant (inactive by default)
 from . import auth         # Optional shared-token gate for /api, /crypto, /mcp (off without token)
+from . import discord_api  # Discord: outbound post + interactions endpoint (inactive by default)
+from . import gsc          # Google Search Console tool (inactive by default, optional libs)
 #                          # db_sync ≠ postgresql.py! Cloud DB is Guardian-only.
 # Future modules (will uncomment when ready):
 # from . import discord_api  # Discord bot integration
@@ -195,11 +198,64 @@ async def crypto_endpoint():
     return jsonify({"status": "not_implemented"}), 501
 
 
-# Future routes (uncomment when ready):
-# @app.route("/discord", methods=["POST"])
-# async def discord_interactions():
-#     """Discord interactions endpoint — signature verification via discord_api module."""
-#     pass
+# Discord interactions endpoint. NOT behind the hub token gate (Discord cannot send it) —
+# protected by Ed25519 signature verification instead (discord_api.verify_signature).
+# Needs a PUBLIC URL (a private HF Space is unreachable for Discord).
+@app.route("/discord", methods=["POST"])
+async def discord_interactions():
+    """Discord interactions endpoint — signature verified BEFORE the body is parsed."""
+    if not discord_api.is_ready():
+        return jsonify({"error": "discord not active"}), 404
+
+    raw = await request.get_data()   # RAW bytes — re-serialized JSON would break the signature
+    if not discord_api.verify_signature(
+        raw,
+        request.headers.get("X-Signature-Ed25519", ""),
+        request.headers.get("X-Signature-Timestamp", ""),
+    ):
+        return jsonify({"error": "invalid request signature"}), 401
+
+    try:
+        payload = json.loads(raw)
+    except ValueError:
+        return jsonify({"error": "invalid JSON"}), 400
+
+    response = await discord_api.handle_interaction(payload)
+    if response is None:
+        return jsonify({"error": "unsupported interaction"}), 400
+    return jsonify(response)
+
+
+# /ask <prompt> — Discord kills answers after 3 s, so: defer (type 5), run the tool in the
+# background, then send_followup(). Strong refs keep the tasks from being garbage-collected.
+_bg_tasks: set = set()
+
+
+async def _discord_ask(interaction: dict) -> dict:
+    cfg     = app_config.get_discord()
+    guilds  = {g.strip() for g in str(cfg.get("DISCORD_ALLOWED_GUILDS", "")).split(",") if g.strip()}
+    if guilds and str(interaction.get("guild_id", "")) not in guilds:
+        return {"type": discord_api.RESPONSE_CHANNEL_MESSAGE, "data": {"content": "Not available on this server."}}
+
+    opts   = {o.get("name"): o.get("value") for o in (interaction.get("data", {}).get("options") or [])}
+    prompt = str(opts.get("prompt") or "").strip()
+    if not prompt:
+        return {"type": discord_api.RESPONSE_CHANNEL_MESSAGE, "data": {"content": "Usage: /ask prompt:<your question>"}}
+
+    token = interaction.get("token", "")
+
+    async def _answer():
+        try:
+            text = await tools.run("llm_complete", prompt=prompt, max_tokens=700)
+        except Exception as e:
+            logger.warning(f"Discord /ask failed: {type(e).__name__}")
+            text = "Sorry — the hub could not answer right now."
+        await discord_api.send_followup(token, text[:1990])   # Discord limit: 2000
+
+    task = asyncio.create_task(_answer())
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+    return {"type": discord_api.RESPONSE_DEFERRED_CHANNEL_MESSAGE}
 
 # @app.route("/webhook/hf", methods=["POST"])
 # async def hf_webhook():
@@ -276,6 +332,11 @@ async def start_application(fundaments: Dict[str, Any]) -> None:
     # ShellMaster — bleibt inaktiv, bis .pyfun [TOOL.shellmaster] active="true"
     # UND token + commands-Datei vorhanden sind (siehe shellmaster.initialize)
     await shellmaster.initialize()
+
+    # Integrationen — beide bleiben inaktiv, bis [DISCORD] / [GSC] in .pyfun aktiv sind
+    await discord_api.initialize()
+    discord_api.register_command_handler("ask", _discord_ask)
+    gsc.initialize()
 
     # Auto-Pricing — füllt Kosten aus OpenRouter/LiteLLM nach, .pyfun gewinnt.
     # Läuft im Hintergrund — blockiert den Start NICHT (no fetch = no crash).
