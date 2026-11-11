@@ -560,6 +560,25 @@ MAX_TOKENS_CAP          = "8192"  # harte Obergrenze für max_tokens pro Call (0
   provider_type       = "gsc"
   [TOOL.gsc_query_END]
 
+  # ── Skill-Datenbanken (app/db/skills/, gebaut mit local_tools/vector_hub) — nur lesen ───────
+  [TOOL.show_skills]
+  active              = "true"
+  description         = "List available skills (name, description, tags) — user + agent skills"
+  provider_type       = "skills"
+  skills_action       = "catalog"
+  [TOOL.show_skills_END]
+
+  [TOOL.search_skills]
+  active              = "true"
+  description         = "Search skills by keywords (BM25) — returns the best matching chunks"
+  provider_type       = "skills"
+  skills_action       = "search"
+  [TOOL.search_skills_END]
+
+  # LLM-Tools: Skills automatisch in den System-Prompt (überschreibt die globalen [SKILLS]-Schalter):
+  #   use_core   = "true"   core.db (Regeln/Restriktionen) voranstellen — kostet bei JEDEM Call Tokens
+  #   use_skills = "true"   passende user-Skill-Chunks (BM25 auf den Prompt) anhängen
+
   # ── Skills: System-Prompt aus Markdown-Datei (app/skills/*.md) ────────────────
   # An jedem LLM-Tool möglich, zusätzlich zu system_prompt:
   #   system_prompt_file = "mein_skill.md"
@@ -577,6 +596,14 @@ SYNC_INTERVAL_SEC   = "30"                       # how often to flush to SQLite
 MAX_CACHE_ENTRIES   = "1000"
 PERSIST_QUEUE_MAX   = "500"                      # restart-safe queue: SQLite → PostgreSQL
 PERSIST_FLUSH_INTERVAL_SEC = "60"                # retry interval for the PG flusher
+
+# Neon scale-to-zero: der Hub wartet NIE auf PostgreSQL und crasht nicht (siehe db_sync Section 6b)
+PG_WRITE_TIMEOUT_SEC = "10"                      # hartes Limit pro PG-Schreibzugriff
+PG_BACKOFF_SEC       = "30"                      # nach Verbindungsfehler so lange kein neuer Versuch (Queue bleibt)
+PG_REQUEST_WAIT_SEC  = "3"                       # so lange wartet persist_result max.; Rest läuft im Hintergrund
+PG_PING_TIMEOUT_SEC  = "5"                       # health_check: "ist die DB wach?"
+PG_STATUS_TTL_SEC    = "20"                      # Status-Ping wird so lange gecacht
+PG_KEEPALIVE_SEC     = "0"                       # 0 = aus. z.B. "240" hält Neon wach — verbraucht Compute-Stunden!
 [DB_SYNC_END]
 
 
@@ -597,6 +624,24 @@ DISCORD_ALLOWED_CHANNELS    = ""                         # kommagetrennt — nur
 DISCORD_ALLOWED_GUILDS      = ""                         # kommagetrennt — leer = /ask auf jedem Server, auf dem der Bot ist
 DISCORD_TIMEOUT_SEC         = "15"
 [DISCORD_END]
+
+
+# =============================================================================
+# SKILLS — Skill-Datenbanken (app/skills_db.py), READ-ONLY.
+#   app/db/skills/core/core.db   = Haupt-Skill mit allen Restriktionen (nie über Tools abrufbar)
+#   app/db/skills/core/*.db      = Agent-Referenz (z.B. core_agent.db) — durchsuchbar
+#   app/db/skills/user/*.db      = deine Skills (autoload) — durchsuchbar
+# Die DBs baust du lokal mit local_tools/vector_hub/secure_vectorizer.py.
+# Tools show_skills / search_skills sind oben aktiv; die Injektion in LLM-Prompts ist AUS (kostet Tokens).
+# =============================================================================
+[SKILLS]
+SKILLS_ACTIVE           = "true"
+SKILLS_CORE_MAX_CHARS   = "8000"     # Obergrenze für den core-Text im System-Prompt
+SKILLS_INJECT_CORE      = "false"    # true = core.db bei ALLEN llm-Tools voranstellen (je Tool: use_core)
+SKILLS_INJECT_RELEVANT  = "false"    # true = passende user-Skill-Chunks anhängen (je Tool: use_skills)
+SKILLS_TOP_K            = "3"
+SKILLS_MAX_CHARS        = "3000"
+[SKILLS_END]
 
 
 # =============================================================================
