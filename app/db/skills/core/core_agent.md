@@ -1,4 +1,4 @@
-# skills.db - How to read and use it (for AI agents)
+# skills.db`s  - How to read and use it (for AI agents)
 
 `skills.db` is a plain SQLite file built by `secure_vectorizer.py` from local
 `.md` skill files. **It is not encrypted or obfuscated.** All text is stored in
