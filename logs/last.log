@@ -88,3 +88,14 @@
 2026-11-11 20:58:07,672 - providers - WARNING - Provider 'anthropic' not in registry — trying fallback.
 2026-11-11 20:58:08,368 - providers - INFO - Response from provider: 'gemini'
 2026-11-11 20:58:08,375 - providers - INFO - Usage: gemini/gemini-2.5-flash in=25 out=3 cost≈$0.000015 (695 ms)
+2026-11-11 21:12:04,534 - providers - WARNING - Provider 'openrouter' failed: ProviderError: HTTP 401 from https://openrouter.ai/api/v1/chat/completions — trying fallback.
+2026-11-11 21:12:04,553 - providers - INFO - 'huggingface' transient error (ConnectError) — retry 1/2 in 2.0s
+2026-11-11 21:12:06,571 - providers - INFO - 'huggingface' transient error (ConnectError) — retry 2/2 in 2.0s
+2026-11-11 21:12:08,589 - providers - WARNING - Provider 'huggingface' failed: ConnectError: [Errno -5] No address associated with hostname — trying fallback.
+2026-11-11 21:12:08,635 - providers - INFO - 'smollm' transient error (ProviderError) — retry 1/2 in 2.0s 
+2026-11-11 21:12:10,675 - providers - INFO - 'smollm' transient error (ProviderError) — retry 2/2 in 2.0s
+2026-11-11 21:12:12,728 - providers - WARNING - Provider 'smollm' failed: ProviderError: HTTP 503 from https://codey-lab-smollm2-customs.hf.space/v1/chat/completions — trying fallback.
+2026-11-11 21:12:13,580 - providers - INFO - Response from provider: 'gemini'
+2026-11-11 21:12:13,588 - providers - INFO - Usage: gemini/gemini-2.5-flash in=25 out=2 cost≈$0.000013 (851 ms)
+2026-11-11 21:26:11,252 - providers - INFO - Response from provider: 'smollm'
+2026-11-11 21:26:11,259 - providers - INFO - Usage: smollm/smollm2-360m in=None out=None cost≈n/a (12549 ms)  # note was shuted down + before response write dataset + calculate adi! fail> adi> resonse> Write dataset or cron? dataset in space tmp see smollm2.log
