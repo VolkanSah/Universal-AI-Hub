@@ -125,7 +125,13 @@ Use these tags to map execution directly to hub tools and specialized workflows.
 
 ---
 
-# Folders u use
+## DATA & STORAGE CONSTRAINTS
+
+- **Database:** Hard limited to `app/.hub_stats.db` (SQLite). Note: On Hugging Face Spaces, runtime state databases like `app/.hub_state.db` are dynamically re-routed to ephemeral `/tmp/*` storage. Use `db_query` for queries and `persist_result` for state orchestration.
+- **Workspace:** All paths in `app/construct/*` are ephemeral and mapped to `/tmp/onstruct/*` on Hugging Face Spaces. Treat accordingly.
+- **Data Protection:** Zero tolerance for sensitive data storage in `app/*`. 
+- **User Uploads:** Stored strictly as `app/construct/user-upload-[filename+timestamp]`. Never overwrite original files; always operate on copies.
+- **Security Check:** Trigger immediate warning if sensitive data is detected in code and prompt for deep scanning via `skills/warloard.md`.
 
 
 
