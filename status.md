@@ -1,5 +1,6 @@
 # Universal AI Hub — Übergabe & Status
-geschrieben mit claude sonnet
+
+written b y claude
 
 > **Für die KI: zuerst komplett lesen, dann erst antworten.**
 > Teil A–D ändern sich selten (Regeln, Architektur, Entscheidungen). Teil E–G sind der aktuelle Stand.
@@ -118,7 +119,7 @@ Außerdem: `DESKTOP_UI/hub.py` (PySide6-Client), `local_tools/vector_hub/` (baut
 - Skills-DB geladen: `core=1 agent=1 user=0` (core-Text 6648 Zeichen).
 - Neon-Pool verbindet beim Start (die „SSL not active“-CRITICAL-Zeile ist bekannt und harmlos — Workaround).
 - Warnung beim Start: 7 OpenRouter-Modelle in `[MODELS]` nicht im Live-Katalog (siehe F).
-- **Tests:** 212 automatische Prüfungen liefen in der KI-Sandbox gegen Stubs — **nicht im Repo**.
+- **Tests:** 212 automatische Prüfungen (Testkarte in Teil H) liefen in der KI-Sandbox gegen Stubs — **nicht im Repo**.
   Live bestätigt ist nur der Start. **Nicht live getestet:** Neon nach Schlaf, Discord, GSC, DuckDuckGo, GUI.
 
 **Wichtige Schalter (`.pyfun`)**
@@ -173,7 +174,31 @@ Außerdem: `DESKTOP_UI/hub.py` (PySide6-Client), `local_tools/vector_hub/` (baut
 
 ---
 
-## H. Neue Sitzung starten
+## H. Testkarte (Stand: alle 212 grün)
+
+Damit nicht jede Sitzung dasselbe neu prüft: **nur die Suite laufen lassen, die zur Änderung passt.**
+Vor dem Ausliefern eines Zips einmal alle fünf — Ausgabe auf die Schlusszeile `=== N ok, 0 FAIL ===` kürzen.
+
+| Suite | Prüfungen | Deckt ab | Laufen lassen bei Änderung an |
+|---|---|---|---|
+| 1 Kern | 74 | Provider-Registry/Typen, Request-Formen (openai_compat, Anthropic, Gemini), Fallback/Retry/Model-Regel, `system`-Prompt, Token-Cap/Clamp, Usage/Kosten, `db_query`-Härtung, Tool-Cache + TTL, Stale-Modelle, Auth-Middleware, ShellMaster-Validierung, REST-Randfälle, `usage_stats` | `providers.py`, `tools.py`, `pricing.py`, `app.py`, `auth.py`, `shellmaster.py` |
+| 2 Integrationen | 59 | DuckDuckGo (Parser, Cooldown, Captcha), GSC (Format, Clamps, Credentials, Fehler ohne Leak), Discord (Bot-Auth, Signatur, Replay, `/discord`-Route, `/ask`, `discord_post` + Allowlists), `app/skills/*.md` (Pfad-Tricks), MCP-Registrierung | `discord_api.py`, `gsc.py`, DDG-Teil in `providers.py`, `system_prompt_file` |
+| 3 Neon-Resilienz | 26 | hängender Writer, `persist_result` blockiert nicht, Backoff, Single-Flight (keine Doppel-Inserts), Abbruch bei Verbindungsfehler, `pg_status`, `health()`, Keepalive | `db_sync.py` (Flush/Status), `health()` |
+| 4 Skills-DB | 37 | echte `core.db`/`core_agent.db` + synthetische User-DB: Laden, kaputte DB übersprungen, BM25/Tags/FTS-Sonderzeichen, `core` nie abrufbar, read-only, Injektion (opt-in), Tools/MCP | `skills_db.py`, Injektion in `tools.py`, `[SKILLS]` |
+| 5 Postgres | 16 | Pool-Parameter, Retry-Logik (Reads ja, Writes nur vor dem Senden), 08006-Neustart bleibt | nur `fundaments/postgresql.py` |
+
+**Grenzen:** Alles läuft gegen Stubs (httpx, aiosqlite, Quart, hypercorn, asyncpg, Google-Libs) und ein simuliertes Netz.
+Das beweist die Logik, **nicht** das Verhalten bei echtem Neon, Discord, Google, DuckDuckGo und nicht die GUI.
+
+**Regeln:** Neue Funktion → Test in die passende Suite ergänzen, keine neue Suite anlegen. Fehlgeschlagene Prüfung erst
+fragen: Code-Fehler oder falsche Testannahme? (Beides kam vor.)
+
+**Ort:** bisher nur in der KI-Sandbox — **nicht im Repo**, nach Sitzungsende weg. Sobald sie als `tests/` im Repo liegen,
+hier Pfad + Startbefehl eintragen.
+
+---
+
+## I. Neue Sitzung starten
 
 Hochladen: **diese Datei + aktuelles Projekt-Zip + letztes Startlog** (ggf. Fehlermeldung).
 Erste Nachricht z. B.: *„Lies status.md, gleiche das Zip damit ab, dann: …“*.
