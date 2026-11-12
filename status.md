@@ -1,6 +1,5 @@
 # Universal AI Hub — Übergabe & Status
-
-written b y claude
+zusammengefasst von claude nachdem ich ihm meine repo gab. 
 
 > **Für die KI: zuerst komplett lesen, dann erst antworten.**
 > Teil A–D ändern sich selten (Regeln, Architektur, Entscheidungen). Teil E–G sind der aktuelle Stand.
@@ -120,7 +119,9 @@ Außerdem: `DESKTOP_UI/hub.py` (PySide6-Client), `local_tools/vector_hub/` (baut
 - Neon-Pool verbindet beim Start (die „SSL not active“-CRITICAL-Zeile ist bekannt und harmlos — Workaround).
 - Warnung beim Start: 7 OpenRouter-Modelle in `[MODELS]` nicht im Live-Katalog (siehe F).
 - **Tests:** 212 automatische Prüfungen (Testkarte in Teil H) liefen in der KI-Sandbox gegen Stubs — **nicht im Repo**.
-  Live bestätigt ist nur der Start. **Nicht live getestet:** Neon nach Schlaf, Discord, GSC, DuckDuckGo, GUI.
+  **Live bestätigt (Log 11.11., 20:52–21:26):** Start; LLM-Call mit Fallback (`anthropic` ohne Key → `gemini`); Usage-/Kosten-Log
+  (≈ $0,000015 pro Test-Call); Kette `openrouter` → `huggingface` → `smollm` → `gemini`; `smollm` antwortet nach manuellem Hochfahren.
+  **Nicht live getestet:** Neon nach Schlaf, Discord, GSC, DuckDuckGo, GUI.
 
 **Wichtige Schalter (`.pyfun`)**
 
@@ -142,13 +143,25 @@ Außerdem: `DESKTOP_UI/hub.py` (PySide6-Client), `local_tools/vector_hub/` (baut
 1. **Desktop-GUI** an die neue Struktur anpassen: Provider-/Modell-Auswahl, Status-Ansicht (`health_check`,
    `usage_stats`, `openrouter_catalog`), Hub-Token-Feld testen. Die GUI sieht nur Tools aus `list_active_tools`.
 2. **OpenRouter-Modelle** neu eintragen (7 gemeldet, auch der Provider-Default `nvidia/nemotron-nano-9b-v2:free`).
-   Hinweis: `huggingface` `base_url` evtl. veraltet (vermutlich `router.huggingface.co/v1`) — prüfen.
+   **Log 11.11.: `api-inference.huggingface.co` löst nicht mehr auf** (`ConnectError … No address associated with hostname`)
+   → `base_url` von `huggingface` auf `https://router.huggingface.co/v1` ändern (gegen HF-Doku prüfen).
 3. **Neon-Test** mit schlafender DB (`persist_result` darf nie hängen; `health_check` zeigt `up` / `no_response`).
 4. **ShellMaster planen:** Vorschlag — Hub plant + validiert, die GUI führt lokal nach Bestätigung aus.
 5. **User-Skills** selbst vektorisieren (Hub liest bisher nur BM25).
 6. **Kosten dauerhaft:** `usage_log` liegt in `/tmp` (geht beim Neustart verloren) → Sync nach Neon über den
    bestehenden Writer (Idee `IDEAS_soon/cost_brige.py`, aber **ohne** zweiten Pool und ohne `fundaments`-Import).
 7. **Tests ins Repo** bringen (laufen bisher nur in der KI-Sandbox).
+
+**Aus dem Log vom 11.11. abends (kein Konstruktionsfehler im Hub — alle drei Anfragen kamen an bzw. scheiterten schon am DNS):**
+8. **OpenRouter → HTTP 401:** Die Anfrage kam an, der Key wurde abgelehnt. Space-Secret `OPENROUTER_API_KEY` prüfen
+   (keine Anführungszeichen/Leerzeichen im Wert, ggf. neu erzeugen). 401 wird bewusst nicht wiederholt.
+9. **smollm:** Schläft der Space, kommt 503. Der Retry (3 × 2 s) ist für einen Kaltstart zu kurz — der Fallback greift korrekt.
+   Die Antwort enthält kein `usage` → Kosten „n/a“. Option: Tokens schätzen (Zeichen ÷ 4), wenn `usage` fehlt.
+   Latenz 12,5 s: Volkans Notiz — der smollm-Server schreibt vor der Antwort ein Dataset; besser im Hintergrund/per Cron
+   (liegt im smollm2-Repo, nicht im Hub; Log dort: `smollm2.log`).
+10. **Default-Provider:** `[TOOL.llm_complete] default_provider` ist `anthropic` (kein Key) → jede Default-Anfrage loggt eine
+    Warnung und fällt auf `gemini` zurück. Auf `gemini` setzen oder Anthropic-Key eintragen.
+11. DNS-Fehler (`ConnectError`) werden heute 3× wiederholt (≈ 4 s verschenkt) — könnte als „nicht wiederholen“ gelten.
 
 **Integrationen einschalten (wenn so weit)**
 - *Discord:* erst `HUB_API_TOKEN` setzen → `[DISCORD]` ausfüllen, `DISCORD_ACTIVE = "true"`, Tool `discord_post` aktivieren,
