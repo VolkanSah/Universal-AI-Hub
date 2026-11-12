@@ -573,6 +573,8 @@ None accessible from `app/*`. Injected as a validated dict by `main.py`.
 - [x] ... rewrite
 - [x] fuck Neon DB + MCP changes secure stuff! fuck
 - [x] rewritten
+- [x] AI comes to this project
+- [x] much more blackouts, fuck you ai, want rewrite my stuff! fuck you you are an electron Bitch!
 - [x] GLM checked it, stupid guy! but finds 2 hidden design bugs, no execution but stupid fail!
 - [x] Claude checks again and again and again, my 5 hours limit used in 1.23 min. A record of my self, normally need 2 minutes
 - [x] wtf, fuck you Claude, fuck you Gemini, fuck you GLM, fuck you Kimi, fuck you DeepSeek, all others I do not use
