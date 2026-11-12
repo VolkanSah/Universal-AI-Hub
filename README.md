@@ -587,6 +587,9 @@ None accessible from `app/*`. Injected as a validated dict by `main.py`.
 - [x] PostgreSQL bridge activ
 - [x] ShellMaster & Discord API not 100 % finished!
 - [X] tools an´d stiff.. later to much yet!
+
+- [x] .. fuck again, claude brick my struckture by reriting tools.py,
+> Note: bitch! will rewrite it self again! I do not understand vibecodes they use AI as brain replacement
 - [ ] some futers.. still crafting
      
 </details>
