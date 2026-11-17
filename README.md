@@ -25,8 +25,8 @@ Pick the description that fits your use case. They're all correct.
 No key → no tool → no crash → no exposed secrets
 ```
 
-> [!WARNING]
-> Most MCP servers are prompts dressed up as servers. This one has a real architecture.
+
+> This is not a MCP agent or collection of bullshit skill and agent files! This is an hub and  has a real architecture.
 
 > [!IMPORTANT]
 > This project is under active development — always use the latest release from [Codey Lab](https://github.com/Codey-LAB/Multi-LLM-API-Gateway) *(more stable builds land here first)*.
