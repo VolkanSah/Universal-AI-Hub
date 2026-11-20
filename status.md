@@ -225,6 +225,7 @@ Patch für Skills, core_agent.db/md umgeschrieben und verkürtzt. secure_vectori
     local_tools/vector_hub/hub_agent_skills.md habe ich nicht angefasst. Das ist weiter die Vectorizer-Doku.
 
 - [x] .pyfun api updates openrouter, Huggingface
+- [x] providers.py zeile 241siehe logs 
 
 
 
