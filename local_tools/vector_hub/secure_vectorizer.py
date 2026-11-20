@@ -193,7 +193,6 @@ class SkillDB:
         self.root = Path(skills_dir).resolve()
         self.db_path = Path(db_path) if db_path else self.root / DB_NAME
         self.db = sqlite3.connect(self.db_path)
-        self.db.execute("PRAGMA journal_mode=WAL")
         self.db.executescript(
             """
             CREATE TABLE IF NOT EXISTS files(
@@ -285,8 +284,14 @@ class SkillDB:
                 stats["removed"] += 1
                 log(f"[REMOVED] {rel}")
         self.db.commit()
+        self._ship_ready()
         log(f"[DONE] {stats}  in {time.time() - t0:.2f}s  ->  {self.db_path}")
         return stats
+
+    def _ship_ready(self) -> None:
+        # Hub opens DBs read-only (app/skills_db.py): no *.db-wal/-shm, journal_mode=DELETE.
+        self.db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        self.db.execute("PRAGMA journal_mode=DELETE")
 
     def _drop(self, rel: str) -> None:
         ids = [r[0] for r in self.db.execute("SELECT id FROM chunks WHERE path=?", (rel,))]
