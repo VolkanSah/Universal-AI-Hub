@@ -126,8 +126,7 @@ MAX_TOKENS_CAP          = "8192"  # harte Obergrenze für max_tokens pro Call (0
   [LLM_PROVIDER.huggingface]
   active             = "true"
   type               = "openai_compat"
-  # TODO prüfen: HF hat (soweit ich weiß) auf https://router.huggingface.co/v1 umgestellt
-  base_url           = "https://api-inference.huggingface.co/v1"
+  base_url           = "https://router.huggingface.co/v1"
   env_key            = "HF_TOKEN"                # → .env: HF_TOKEN=hf_...
   default_model      = "Qwen/Qwen2.5-Coder-32B-Instruct"
   fallback_to        = "smollm" # ← last in chain, no further fallback
