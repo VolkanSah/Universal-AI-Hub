@@ -3,7 +3,7 @@ zusammengefasst von claude nachdem ich ihm meine repo gab.
 
 > **Für die KI: zuerst komplett lesen, dann erst antworten.**
 > Teil A–D ändern sich selten (Regeln, Architektur, Entscheidungen). Teil E–G sind der aktuelle Stand.
-> Zuletzt aktualisiert: 12.11.2026 · Pflege: am Ende jeder Sitzung „status.md aktualisieren“ sagen.
+> Zuletzt aktualisiert: 20.11.2026 · Pflege: am Ende jeder Sitzung „status.md aktualisieren“ sagen.
 
 ---
 
@@ -227,7 +227,8 @@ Patch für Skills, core_agent.db/md umgeschrieben und verkürtzt. secure_vectori
 - [x] .pyfun api updates openrouter, Huggingface
 - [x] providers.py zeile 241siehe logs
 - [x] ideas duckduckgo fallback secure
-- [x] cli dummy HF all needed (maybe) 
+- [x] cli dummy HF all needed (maybe)
+- [x] Discord eingebaut, nicht getestet auf Discord server
 
 
 
