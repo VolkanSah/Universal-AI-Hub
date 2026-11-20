@@ -387,7 +387,7 @@ Transport is configured in `app/.pyfun [HUB]` — not via ENV.
 
 
 <details>
-<summary><b>- Desktop client (experimental — ~80 % me, 20 % typing assistant) -</b></summary>
+<summary><b>- Desktop client (experimental — ~20 % me, 80 % typing assistant / vibecode) -</b></summary>
 
 A full PySide6 desktop client is included in `DESKTOP_CLIENT/hub.py`.
 Communicates via the REST `/api` endpoint — no MCP protocol overhead.
