@@ -111,7 +111,7 @@ POST /api
 {"tool": "llm_complete", "params": {"prompt": "Hello", "provider": "anthropic"}}
 ```
 
-Used by: Desktop Client (`DESKTOP_CLIENT/hub.py`), WordPress plugin, any custom integration.
+Used by: Desktop Client (`DESKTOP_CLIENT/*`), WordPress plugin, any custom integration.
 
 **MCP (`/mcp`)** — full MCP protocol: tool discovery, structured calls, streaming responses.
 
@@ -421,7 +421,7 @@ python DESKTOP_CLIENT/hub.py
 
 | Client | Interface used | Notes |
 | :--- | :--- | :--- |
-| [Desktop Client](DESKTOP_CLIENT/hub.py) | REST `/api` | PySide6, local (soon local-web)|
+| [Desktop Client](DESKTOP_CLIENT/*) | REST `/api` | old PySide6 vibecode, recraft in tkinter selfmade,  will be optimzed|
 | [WP AI Hub](https://github.com/VolkanSah/WP-AI-HUB/) | REST `/api` | WordPress Boilerplate plugin | 
 | TYPO3 (soon) | REST `/api` | — |
 | Claude Desktop | MCP `/mcp` | Streamable HTTP |
