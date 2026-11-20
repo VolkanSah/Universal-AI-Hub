@@ -211,8 +211,32 @@ hier Pfad + Startbefehl eintragen.
 
 ---
 
+
+
+
+### Update: 20.11.2026
+Patch für Skills, core_agent.db/md umgeschrieben und verkürtzt. secure_vectorizer umgeschrieben 
+
+- [x] core_agent.md + mit dem skills_db.py getestet
+    Sie beschreibt jetzt nur noch Hub-Nutzung: show_skills und search_skills, MCP- und REST-Aufruf (die Query geht bei REST in prompt), Scopes, Suchregeln und Limits.
+    Vectorizer-Interna wie Vektoren, Hybrid-Fusion, build(), CLI und Windows-Pfad sind raus.
+    Neu drin: search_skills hat Default-Scope user. Diese Datei ist deshalb nur mit scope="agent" oder "all" sichtbar.
+    Frontmatter ist ergänzt: name, description und 8 Tags.
+    local_tools/vector_hub/hub_agent_skills.md habe ich nicht angefasst. Das ist weiter die Vectorizer-Doku.
+
+- [x] .pyfun api updates openrouter, Huggingface
+
+
+
+
 ## I. Neue Sitzung starten
 
 Hochladen: **diese Datei + aktuelles Projekt-Zip + letztes Startlog** (ggf. Fehlermeldung).
 Erste Nachricht z. B.: *„Lies status.md, gleiche das Zip damit ab, dann: …“*.
 Ende der Sitzung: *„status.md aktualisieren“* — E, F und G anpassen, A–D nur bei geänderten Regeln/Entscheidungen.
+
+
+
+
+
+
