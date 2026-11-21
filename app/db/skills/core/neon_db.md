@@ -19,3 +19,6 @@ tags: neon, postgres, postgresql, sqlite, python, persist, bridge, queue, memory
 2. **Initialize Project (from project root):**
    ```bash
    neon init -y --org-id "{pull_guard_value_}" --project-id {pull_guard_value_} --branch production --services postgres
+
+## SQLITE flush to NEON POSTGRE DATABASE
+⚠️ soon!
