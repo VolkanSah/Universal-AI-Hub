@@ -1,9 +1,21 @@
-Set up this app on Neon.
-1. `npm i -g neon@latest`. If that fails, use `npx neon@latest` in place of `neon`.
-   If a neon command opens a browser sign-in, tell me to finish it there. If that times out or fails, ask me to run `neon login`, then retry.
-2. In the project root:
-   neon init -y --org-id "{pull_guard_value_}" --project-id {pull_guard_value_} --branch production --services postgres,auth,ai-gateway,object-storage,functions,realtime
-3. `neon deploy`. It provisions the services in neon.ts and pulls their env vars into `.env.local` (or `.env` if it exists).
-4. Wire each service into the app's code using those env vars. Consult the installed Neon agent skills for best practices, e.g., what database driver to use given the app architecture and hosting runtime.
-5. Prove it works: `npm run build` must pass, then start the app, each wired service must be tested to prove it works end to end.
-6. Report what changed, the command output that proves step 5, and anything that failed.
+---
+name: Neon Persistence & Python AI Hub Bridge
+description: "Set up Neon PostgreSQL for a Python AI hub using SQLite short-term memory, a restart-safe persist_queue bridge, and filtered long-term storage in hub_results"
+tags: neon, postgres, postgresql, sqlite, python, persist, bridge, queue, memory, guardian, observability, cli
+---
+
+# Neon Setup & Persistence Bridge (`AGENT.md` — Python AI Hub)
+
+## Architektur-Grundsatz
+- **SQLite (Kurzzeitgedächtnis & Shared Hub):** Alle KIs und Tools lesen und schreiben lokal in SQLite ohne Cloud-Wartezeit.
+- **SQLite `persist_queue` (Restart-safe Bridge):** `enqueue_persist()` schreibt sofort und fehlertolerant (auch ohne `DATABASE_URL` oder bei ausgefallenem Neon/PG — kein `RuntimeError`, kein `502`).
+- **Neon PostgreSQL `hub_results` (Langzeitgedächtnis):** Nur Einträge, die den Filter passieren, landen über `flush_persist_queue()` (Hintergrund-Flusher, z. B. alle 60 s, at-least-once) in `hub_results (id, created_at, source, model, score, payload JSONB)`.
+- **Filter-Regel (`score REAL`):** Der Hub reicht `score` unverändert durch und bewertet/filtert ihn nicht selbst; deine Filterlogik bestimmt, was persistiert oder gelesen wird.
+- **Limits & Observability:** Queue-Limit max. 500 Einträge (älteste werden verworfen), Status & Telemetrie über `persist_status` (Queue-Tiefe, ältester Eintrag, `attempts`, Bridge-State). Guardian-Layer und App-Layer trennen Tabellen-Ownership strikt.
+
+## Setup-Schritte auf Neon (ohne Node/npm-Zwang im Projekt)
+1. **CLI bereitstellen:** Nutze die `neon`-CLI, falls installiert; falls nicht vorhanden, führe sie über `npx neon@latest` aus (kein `npm run build` oder `neon.ts` für die Python-App erzwingen).
+2. **Auth prüfen:** Falls ein `neon`-Befehl einen Browser-Login öffnet, den Abschluss im Browser abwarten; bei Timeout oder Fehler `neon login` ausführen und den Schritt wiederholen.
+3. **Projekt initialisieren (im Projekt-Root):**
+   ```bash
+   neon init -y --org-id "{pull_guard_value_}" --project-id {pull_guard_value_} --branch production --services postgres
