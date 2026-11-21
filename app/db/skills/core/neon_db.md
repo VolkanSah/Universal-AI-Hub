@@ -4,6 +4,8 @@ description: "Set up Neon PostgreSQL for a Python AI hub using SQLite short-term
 tags: neon, postgres, postgresql, sqlite, python, persist, bridge, queue, memory, guardian, observability, cli
 ---
 
+# route over hub.llm
+
 
 ## HUB Architecture Principles
 - **SQLite (Short-Term Memory & Shared Bus):** All AI models and tools read and write locally to SQLite without waiting on the cloud.
