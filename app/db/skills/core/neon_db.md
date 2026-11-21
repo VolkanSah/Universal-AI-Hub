@@ -8,6 +8,7 @@ tags: neon, postgres, postgresql, sqlite, python, persist, bridge, queue, memory
 ## Architecture Principles
 - **SQLite (Short-Term Memory & Shared Bus):** All AI models and tools read and write locally to SQLite without waiting on the cloud.
 - **SQLite `persist_queue` (Restart-Safe Bridge):** `enqueue_persist()` writes immediately and never crashes—even without `DATABASE_URL` or when Neon/PostgreSQL is down (no `RuntimeError`, no `502`).
+- How use query? - soon ⚠️
 - **Neon PostgreSQL `hub_results` (Long-Term Memory):** Only entries that pass your filter reach `hub_results (id, created_at, source, model, score, payload JSONB)` via `flush_persist_queue()` (background flusher, e.g., every 60s, at-least-once semantics).
 - **Filter Rule (`score REAL`):** The hub passes `score` through untouched without interpreting or filtering it itself; your filter logic decides what gets persisted or read.
 - **Limits & Observability:** Max queue cap of 500 entries (evicting oldest entries), status and telemetry via `persist_status` (queue depth, oldest entry, `attempts`, bridge state), and strict table ownership separation between the guardian layer and the app layer.
