@@ -4,8 +4,6 @@ description: "Set up Neon PostgreSQL for a Python AI hub using SQLite short-term
 tags: neon, postgres, postgresql, sqlite, python, persist, bridge, queue, memory, guardian, observability, cli
 ---
 
-# Neon Setup & Persistence Bridge (`AGENT.md` — Python AI Hub)
-
 ## Architecture Principles
 - **SQLite (Short-Term Memory & Shared Bus):** All AI models and tools read and write locally to SQLite without waiting on the cloud.
 - **SQLite `persist_queue` (Restart-Safe Bridge):** `enqueue_persist()` writes immediately and never crashes—even without `DATABASE_URL` or when Neon/PostgreSQL is down (no `RuntimeError`, no `502`).
