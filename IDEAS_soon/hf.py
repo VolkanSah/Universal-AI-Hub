@@ -1,5 +1,7 @@
 # HF get own file openrouter , too
 
+#  !!! WARNING PURE AI CODE just for some test.
+
 #!/usr/bin/env python3
 """
 hfbrige.py - modulare Testdatei fuer Hugging Face Inference Providers.
