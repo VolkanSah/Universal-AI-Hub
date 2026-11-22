@@ -5,8 +5,8 @@ name: Push Branch -> Hugging Face Space
 #
 # Bedienung: Actions -> "Push Branch -> Hugging Face Space" -> Run workflow
 #            Oben bei "Use workflow from" den Branch wählen, der nach HF soll.
-#            Dieser Branch wird als EIN sauberer Commit (ohne Historie, Binärdateien
-#            via LFS/Xet) per Force-Push auf HF main gelegt.
+#            dry_run = true  -> alles wird gebaut und geprüft, aber NICHT überschrieben.
+#            dry_run = false -> HF main wird per Force-Push mit EINEM sauberen Commit ersetzt.
 
 on:
   workflow_dispatch:
@@ -16,8 +16,13 @@ on:
         required: true
         default: 'codey-lab/Universal-MCP-Hub'
         type: string
+      dry_run:
+        description: 'Dry-Run: alles prüfen, aber nichts nach HF pushen'
+        required: false
+        default: true
+        type: boolean
       confirm_overwrite:
-        description: 'ACHTUNG: Haken setzen, wenn HF main mit diesem Branch überschrieben werden darf'
+        description: 'ACHTUNG: Haken setzen, wenn HF main mit diesem Branch überschrieben werden darf (nur echter Push)'
         required: false
         default: false
         type: boolean
@@ -34,10 +39,12 @@ jobs:
       BRANCH: ${{ github.ref_name }}
       REF_TYPE: ${{ github.ref_type }}
       CONFIRM: ${{ inputs.confirm_overwrite }}
+      DRY_RUN: ${{ inputs.dry_run }}
 
     steps:
       - name: Nur Branches erlaubt
         run: |
+          echo "Ref-Typ: $REF_TYPE | Branch: $BRANCH | Dry-Run: $DRY_RUN"
           if [ "$REF_TYPE" != "branch" ]; then
             echo "::error::Bitte einen Branch auswählen (keinen Tag)."
             exit 1
@@ -56,6 +63,7 @@ jobs:
             echo "::error::Secret PULL_HF_GIT_TOKEN ist leer oder nicht vorhanden."
             exit 1
           fi
+
           CODE=$(curl -s -o /dev/null -w "%{http_code}" \
             -H "Authorization: Bearer $HF_TOKEN" \
             "https://huggingface.co/api/spaces/${HF_REPO}")
@@ -64,25 +72,35 @@ jobs:
             echo "::error::HF-Token hat keinen Zugriff auf den Space (Status $CODE)."
             exit 1
           fi
+
+          WHOAMI=$(curl -s -H "Authorization: Bearer $HF_TOKEN" https://huggingface.co/api/whoami-v2 || true)
+          echo "Token-Info (Name/Rolle):"
+          echo "$WHOAMI" | python3 -c "import sys,json; d=json.load(sys.stdin); print('  user:', d.get('name')); a=d.get('auth',{}); print('  type:', a.get('type')); print('  role:', a.get('accessToken',{}).get('role'))" || echo "  (konnte nicht gelesen werden)"
+
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "::notice::DRY-RUN aktiv: es wird nichts überschrieben."
+            exit 0
+          fi
           if [ "$CONFIRM" != "true" ]; then
             echo "::error::WARNUNG: HF main von ${HF_REPO} würde mit Branch '${BRANCH}' ÜBERSCHRIEBEN. Zum Bestätigen 'confirm_overwrite' ankreuzen."
             exit 1
           fi
           echo "::warning::ACHTUNG: HF Space ${HF_REPO} (main) wird mit Branch '${BRANCH}' überschrieben!"
 
-      - name: Push nach Hugging Face
+      - name: Deploy-Commit bauen (LFS, ohne Historie)
+        id: build
         run: |
           set -euo pipefail
-          HF_REPO="${HF_REPO_RAW%/}"
-          echo "Push: GitHub '${BRANCH}' -> HF Space '${HF_REPO}' (main)"
+          echo "::group::Git/LFS Versionen"
+          git --version
+          git lfs version
+          echo "::endgroup::"
 
           git config user.name  "github-actions"
           git config user.email "actions@github.com"
 
-          # Frischer Branch ohne Historie (alte Binär-Blobs fliegen raus)
           git checkout --orphan hf-deploy
 
-          # Binärdateien über LFS/Xet tracken (bei Bedarf Endungen ergänzen)
           git lfs install --local
           git lfs track \
             "*.db" "*.sqlite" "*.sqlite3" \
@@ -91,17 +109,89 @@ jobs:
             "*.parquet" "*.pt" "*.pth" "*.bin" "*.safetensors" "*.onnx" \
             "*.pdf" "*.mp3" "*.mp4" "*.wav"
 
-          # Index leeren, damit ALLES neu durch den LFS-Filter läuft
           git rm -r --cached . -q
           git add -A
+          git commit -q -m "Deploy ${BRANCH} @ ${GITHUB_SHA::7}"
 
-          echo "--- LFS-getrackte Dateien ---"
-          git lfs ls-files
+          echo "::group::Dateien im Commit (Anzahl)"
+          git ls-files | wc -l
+          echo "::endgroup::"
 
-          git commit -m "Deploy ${BRANCH} @ ${GITHUB_SHA::7}"
+          echo "::group::LFS-Dateien"
+          git lfs ls-files --long | sed 's/^/  /'
+          echo "::endgroup::"
+
+          echo "::group::Größe"
+          du -sh .git
+          echo "::endgroup::"
+
+          # Prüfung: Gibt es noch echte Binärdateien OHNE LFS? (die würde HF ablehnen)
+          EMPTY_TREE=$(git hash-object -t tree /dev/null)
+          BAD=$(git diff --numstat "$EMPTY_TREE" HEAD | awk '$1=="-" && $2=="-" {print $3}' || true)
+          if [ -n "$BAD" ]; then
+            echo "::error::Binärdateien OHNE LFS gefunden (HF lehnt die ab):"
+            echo "$BAD" | sed 's/^/  - /'
+            echo "Tipp: Endung bei 'git lfs track' ergänzen."
+            exit 1
+          fi
+          echo "Check OK: keine Binärdateien ausserhalb von LFS."
+
+      - name: Push nach Hugging Face
+        id: push
+        run: |
+          set -uo pipefail
+          HF_REPO="${HF_REPO_RAW%/}"
+          echo "Push: GitHub '${BRANCH}' -> HF Space '${HF_REPO}' (main) | Dry-Run: ${DRY_RUN}"
 
           git remote remove hf 2>/dev/null || true
           git remote add hf "https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_REPO}"
-          git push -f hf hf-deploy:main
 
-          echo "### Gepusht: \`${BRANCH}\` -> HF \`${HF_REPO}\` (main)" >> "$GITHUB_STEP_SUMMARY"
+          export GIT_TRACE=1
+          export GIT_TRANSFER_TRACE=1
+          export GIT_LFS_TRACE=1
+          export GIT_TERMINAL_PROMPT=0
+
+          ARGS="-f"
+          if [ "$DRY_RUN" = "true" ]; then
+            ARGS="-f --dry-run"
+          fi
+
+          set +e
+          git push $ARGS --verbose hf hf-deploy:main 2>&1 | sed "s/${HF_TOKEN}/***TOKEN***/g" | tee push.log
+          RC=${PIPESTATUS[0]}
+          set -e
+
+          echo "Git-Push Exit-Code: $RC"
+          if [ "$RC" -ne 0 ]; then
+            echo "::error::Push fehlgeschlagen (Exit $RC). Letzte Zeilen:"
+            tail -n 40 push.log
+            exit "$RC"
+          fi
+
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "::notice::DRY-RUN erfolgreich. Es wurde NICHTS auf HF geändert."
+          else
+            echo "::notice::Push erfolgreich."
+          fi
+
+      - name: Zusammenfassung (läuft immer)
+        if: always()
+        run: |
+          {
+            echo "### Push \`${BRANCH}\` -> HF \`${HF_REPO_RAW%/}\` (main)"
+            echo ""
+            echo "| Schritt | Ergebnis |"
+            echo "|---|---|"
+            echo "| Dry-Run | ${DRY_RUN} |"
+            echo "| Deploy-Commit | ${{ steps.build.outcome }} |"
+            echo "| Push | ${{ steps.push.outcome }} |"
+            if [ -f push.log ]; then
+              echo ""
+              echo "<details><summary>Letzte 40 Zeilen Push-Log</summary>"
+              echo ""
+              echo '```'
+              tail -n 40 push.log
+              echo '```'
+              echo "</details>"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
