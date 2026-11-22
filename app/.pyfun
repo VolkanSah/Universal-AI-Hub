@@ -2,6 +2,7 @@
 # .pyfun — PyFundaments App Configuration
 # Single source of truth for app/* modules (provider, models, tools, hub)
 # Part of: Universal MCP Hub on PyFundaments
+# Pull test 1 hf
 # =============================================================================
 # RULES:
 #   - All values in double quotes "value"
