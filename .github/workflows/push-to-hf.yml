@@ -5,7 +5,8 @@ name: Push Branch -> Hugging Face Space
 #
 # Bedienung: Actions -> "Push Branch -> Hugging Face Space" -> Run workflow
 #            Oben bei "Use workflow from" den Branch wählen, der nach HF soll.
-#            Dieser Branch wird per Force-Push auf HF main gelegt.
+#            Dieser Branch wird als EIN sauberer Commit (ohne Historie, Binärdateien
+#            via LFS/Xet) per Force-Push auf HF main gelegt.
 
 on:
   workflow_dispatch:
@@ -45,7 +46,7 @@ jobs:
       - name: Checkout (gewählter Branch)
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           lfs: true
 
       - name: Preflight (HF Token + Bestätigung)
@@ -75,9 +76,32 @@ jobs:
           HF_REPO="${HF_REPO_RAW%/}"
           echo "Push: GitHub '${BRANCH}' -> HF Space '${HF_REPO}' (main)"
 
-          git lfs install
+          git config user.name  "github-actions"
+          git config user.email "actions@github.com"
+
+          # Frischer Branch ohne Historie (alte Binär-Blobs fliegen raus)
+          git checkout --orphan hf-deploy
+
+          # Binärdateien über LFS/Xet tracken (bei Bedarf Endungen ergänzen)
+          git lfs install --local
+          git lfs track \
+            "*.db" "*.sqlite" "*.sqlite3" \
+            "*.png" "*.jpg" "*.jpeg" "*.gif" "*.webp" "*.ico" \
+            "*.zip" "*.tar" "*.gz" "*.7z" \
+            "*.parquet" "*.pt" "*.pth" "*.bin" "*.safetensors" "*.onnx" \
+            "*.pdf" "*.mp3" "*.mp4" "*.wav"
+
+          # Index leeren, damit ALLES neu durch den LFS-Filter läuft
+          git rm -r --cached . -q
+          git add -A
+
+          echo "--- LFS-getrackte Dateien ---"
+          git lfs ls-files
+
+          git commit -m "Deploy ${BRANCH} @ ${GITHUB_SHA::7}"
+
           git remote remove hf 2>/dev/null || true
           git remote add hf "https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_REPO}"
-          git push -f hf "HEAD:refs/heads/main"
+          git push -f hf hf-deploy:main
 
           echo "### Gepusht: \`${BRANCH}\` -> HF \`${HF_REPO}\` (main)" >> "$GITHUB_STEP_SUMMARY"
