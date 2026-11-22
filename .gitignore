@@ -4,9 +4,6 @@
 __pycache__/
 *.py[codz]
 *$py.class
-mcp_desktop.json
-DESKTOP_UI/mcp_desktop.json
-
 
 
 # C extensions

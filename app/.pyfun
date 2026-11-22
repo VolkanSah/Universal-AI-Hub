@@ -97,7 +97,7 @@ MAX_TOKENS_CAP          = "8192"  # harte Obergrenze für max_tokens pro Call (0
   base_url            = "https://api.anthropic.com/v1"
   env_key             = "ANTHROPIC_API_KEY"
   api_version_header  = "2023-06-01"
-  default_model       = "claude-haiku-5-5"
+  default_model       = "claude-sonnet-5-5"
   supports_cache      = "true"
   fallback_to         = "gemini"
   [LLM_PROVIDER.anthropic_END]
@@ -107,7 +107,7 @@ MAX_TOKENS_CAP          = "8192"  # harte Obergrenze für max_tokens pro Call (0
   type          = "gemini"
   base_url      = "https://generativelanguage.googleapis.com/v1beta"
   env_key       = "GEMINI_API_KEY"
-  default_model = "gemini-2.5-flash"
+  default_model = "gemini-3.5-flash-lite"
   supports_cache = "true"
   fallback_to   = "openrouter"
   [LLM_PROVIDER.gemini_END]
@@ -115,11 +115,11 @@ MAX_TOKENS_CAP          = "8192"  # harte Obergrenze für max_tokens pro Call (0
   [LLM_PROVIDER.openrouter]
   active              = "true"
   type                = "openai_compat"
-  base_url            = "https://openrouter.ai/api/v1"
+  base_url            = "https://openrouter.ai/api/v1/responses"
   env_key             = "OPENROUTER_API_KEY"      # → .env: OPENROUTER_API_KEY=sk-or-...
   header.HTTP-Referer = "{env:APP_URL|https://huggingface.co}"
-  header.X-Title      = "{env:HUB_NAME|Universal MCP Hub}"
-  default_model       = "nvidia/nemotron-nano-9b-v2:free"
+  header.X-Title      = "{env:HUB_NAME|Universal AI Hub}"
+  default_model       = "perplexity/pplx-decider-flash-v1.3:free"
   fallback_to         = "huggingface"
   [LLM_PROVIDER.openrouter_END]
 

@@ -1,5 +1,5 @@
 ---
-title: Universal AI Hub
+title: Universal AI Hub - dev - privat
 emoji: 🛡️
 colorFrom: indigo
 colorTo: red
@@ -25,8 +25,8 @@ Pick the description that fits your use case. They're all correct.
 No key → no tool → no crash → no exposed secrets
 ```
 
-
-> This is not a MCP agent or collection of bullshit skill and agent files! This is an hub and  has a real architecture.
+> [!WARNING]
+> Most MCP servers are prompts dressed up as servers. This one has a real architecture.
 
 > [!IMPORTANT]
 > This project is under active development — always use the latest release from [Codey Lab](https://github.com/Codey-LAB/Multi-LLM-API-Gateway) *(more stable builds land here first)*.
@@ -35,7 +35,7 @@ No key → no tool → no crash → no exposed secrets
 ---
 
 <details>
-<summary><b>- Usernote: how this was actually built (no vibecode - or am I lying? 😄) -</b></summary>
+<summary><b>🧠 Usernote: how this was actually built (no vibecode - or am I lying? 😄)</b></summary>
      
 I created this code on my own. And it took a toll on me - I mean really took a toll. We're not talking about my code not working, but more like I've been looking at my own design for so long that my brain is a mess. That's when AI came into the picture - not to do the coding for me, but to help me make sense of my thoughts and organize the ideas that were already floating around in my head.
 
@@ -48,7 +48,7 @@ So, is this something called vibecoding? **No**, it's not. Vibecoding is when yo
 ---
 
 <details>
-<summary><b>- What's new in v1.2.0 — memory that survives a reboot</b> -</summary>
+<summary><b>🆕 What's new in v1.2.0 — memory that survives a reboot</b></summary>
 
 > Full changelog (with proof) in [`REVIEW.md`](REVIEW.md). The short version, my words:
 
@@ -74,7 +74,7 @@ So, is this something called vibecoding? **No**, it's not. Vibecoding is when yo
 --- 
 
 <details>
-<summary><b>- Why this exists</b> -</summary>
+<summary><b>❓ Why this exists</b></summary>
 
 The AI ecosystem is full of servers with hardcoded keys, `os.environ` scattered everywhere, zero sandboxing. One misconfigured fork and your API keys are gone.
 
@@ -92,7 +92,7 @@ This hub is the antidote:
 --- 
 
 <details>
-<summary><b>- Two interfaces — one server</b> -</summary>
+<summary><b>🔌 Two interfaces — one server</b></summary>
 
 Two completely independent interfaces on the same hypercorn instance:
 
@@ -111,7 +111,7 @@ POST /api
 {"tool": "llm_complete", "params": {"prompt": "Hello", "provider": "anthropic"}}
 ```
 
-Used by: Desktop Client (`DESKTOP_CLIENT/*`), WordPress plugin, any custom integration.
+Used by: Desktop Client (`DESKTOP_CLIENT/hub.py`), WordPress plugin, any custom integration.
 
 **MCP (`/mcp`)** — full MCP protocol: tool discovery, structured calls, streaming responses.
 
@@ -132,7 +132,7 @@ Auth, rate limiting and logging can all hook into the `/mcp` route in `app/app.p
 ---
 
 <details>
-<summary><b>- Architecture — the sandbox is structural</b> -</summary>
+<summary><b>🏗 Architecture — the sandbox is structural</b></summary>
 
 ```
 main.py (Guardian)
@@ -185,7 +185,7 @@ This isn't documentation. It's enforced by the import structure.
 ---
 
 <details>
-<summary><b>- Memory — short-term, long-term, and my filter (v1.2.0)</b> -</summary>
+<summary><b>💾 Memory — short-term, long-term, and my filter (v1.2.0)</b></summary>
 
 The design is deliberately simple:
 
@@ -222,7 +222,7 @@ PostgreSQL hub_results        ← (id, created_at, source, model, score, payload
 ---
 
 <details>
-<summary><b>- Tools — no key, no tool, server still starts</b> -</summary>
+<summary><b>🧰 Tools — no key, no tool, server still starts</b></summary>
 
 Tools register at startup — only if the required API key exists. No key, no tool. Server always starts.
 
@@ -235,7 +235,7 @@ Tools register at startup — only if the required API key exists. No key, no to
 | `BRAVE_API_KEY` | `web_search` | Independent web index |
 | `TAVILY_API_KEY` | `web_search` | AI-optimized search with synthesized answers |
 | `DATABASE_URL` | `persist_result`, `persist_status` | Long-term memory bridge (queue without it) |
-| `SHELLMASTER_TOKEN` | `shellmaster*` | ⛔ SECURITY LEVEL RED — local only, `active="false"` |
+| `SHELLMASTER_TOKEN` | `shellmaster*` | ⛔ SECURITY LEVEL ROT — local only, `active="false"` |
 | *(always)* | `list_active_tools` | Shows key names only — never values. Plus `pricing_stats` |
 | *(always)* | `health_check` | Status + uptime + active transport |
 | *(always)* | `get_model_info` | Limits, costs, capabilities per model (auto-merged) |
@@ -266,7 +266,7 @@ Future hooks (commented, ready): `image_gen`, `code_exec`, ShellMaster 2.0 (ROT 
 ---
 
 <details>
-<summary><b>- Fallback chain</b> -</summary>
+<summary><b>🔁 Fallback chain</b></summary>
 
 All LLM providers share one `llm_complete` tool. If a provider fails, the hub walks the fallback chain from `.pyfun`:
 
@@ -292,7 +292,7 @@ Same pattern applies to search providers (`brave → tavily`).
 
 
 <details open>
-<summary><b>- Quick start</b> -</summary>
+<summary><b>🚀 Quick start</b></summary>
 
 ### HuggingFace Spaces (recommended)
 
@@ -301,7 +301,7 @@ Same pattern applies to search providers (`brave → tavily`).
 3. Add the API keys you have (any subset works)
 4. Space starts automatically — only tools with valid keys register
 
-[→ Live Demo Space](https://huggingface.co/spaces/codey-lab/Multi-LLM-API-Gateway) (no LLM keys set) -- last Version 
+[→ Live Demo Space](https://huggingface.co/spaces/codey-lab/Multi-LLM-API-Gateway) (no LLM keys set)
 
 ### Local / Docker
 
@@ -335,7 +335,7 @@ Transport is configured in `app/.pyfun [HUB]` — not via ENV.
 
 
 <details>
-<summary><b>- Connect an MCP client</b> -</summary>
+<summary><b>🔗 Connect an MCP client</b></summary>
 
 ### Streamable HTTP (default — MCP spec 2025-11-25)
 
@@ -387,7 +387,7 @@ Transport is configured in `app/.pyfun [HUB]` — not via ENV.
 
 
 <details>
-<summary><b>- Desktop client (experimental — ~20 % me, 80 % typing assistant / vibecode) -</b></summary>
+<summary><b>🖥 Desktop client (experimental — ~80 % me, 20 % typing assistant)</b></summary>
 
 A full PySide6 desktop client is included in `DESKTOP_CLIENT/hub.py`.
 Communicates via the REST `/api` endpoint — no MCP protocol overhead.
@@ -410,19 +410,19 @@ python DESKTOP_CLIENT/hub.py
 - Full request/response log with timestamps
 - Runs on Windows, Linux, macOS
 
-[→ Desktop Client docs](DESKTOP_UI/README.md) - Warning 80 % Vibecode, was so lazy! will fix it soon! But it works! 
+[→ Desktop Client docs](DESKTOP_CLIENT/README.md)
 
 </details>
 
 ---
 
 <details>
-<summary><b>- CMS & custom clients</b> -</summary>
+<summary><b>🧩 CMS & custom clients</b></summary>
 
 | Client | Interface used | Notes |
 | :--- | :--- | :--- |
-| [Desktop Client](DESKTOP_CLIENT/*) | REST `/api` | old PySide6 vibecode, recraft in tkinter selfmade,  will be optimzed|
-| [WP AI Hub](https://github.com/VolkanSah/WP-AI-HUB/) | REST `/api` | WordPress Boilerplate plugin | 
+| [Desktop Client](DESKTOP_CLIENT/hub.py) | REST `/api` | PySide6, local |
+| [WP AI Hub](https://github.com/VolkanSah/WP-AI-HUB/) | REST `/api` | WordPress plugin |
 | TYPO3 (soon) | REST `/api` | — |
 | Claude Desktop | MCP `/mcp` | Streamable HTTP |
 | Cursor / Windsurf | MCP `/mcp` | Streamable HTTP |
@@ -434,7 +434,7 @@ python DESKTOP_CLIENT/hub.py
 
 
 <details>
-<summary><b>- Configuration (.pyfun) — one file to rule the app</b> -</summary>
+<summary><b>⚙️ Configuration (.pyfun) — one file to rule the app</b></summary>
 
 `app/.pyfun` is the single source of truth for all app behavior. Three tiers:
 
@@ -485,7 +485,7 @@ _PROVIDER_CLASSES = {
 
 
 <details>
-<summary><b>- Dependencies</b> -</summary>
+<summary><b>📦 Dependencies</b></summary>
 
 ```
 # PyFundaments Core (always required)
@@ -518,7 +518,7 @@ requests         — sync HTTP for tool workers
 
 
 <details>
-<summary><b>- Security design</b> -</summary>
+<summary><b>🛡 Security design</b></summary>
 
 - API keys live in HF Secrets / `.env` — never in `.pyfun`, never in code
 - `list_active_tools` returns key **names** only — never values
@@ -539,7 +539,7 @@ requests         — sync HTTP for tool workers
 ---
 
 <details>
-<summary><b>- Foundation: PyFundaments</b> -</summary>
+<summary><b>🧱 Foundation: PyFundaments</b></summary>
 
 Built on [PyFundaments](PyFundaments.md) — a security-first Python boilerplate, crafted by hand over months (see the usernote at the top):
 
@@ -561,35 +561,29 @@ None accessible from `app/*`. Injected as a validated dict by `main.py`.
 
 ---
 
-<details><summary><b>- Roadmap</b> -</summary>
+<details><summary><b>🛤️ Roadmap/b></summary>
 
 ## haha that's good!
-- [x] 10 months before...
-- [x] some blackouts
-- [x] more blackouts
-- [x] ... month 6 WTF... runs but only stupid secure LLM wrapper and tools...
-- [x] ... pff brick again!
-- [x] ... fuck!
-- [x] ... rewrite
-- [x] fuck Neon DB + MCP changes secure stuff! fuck
-- [x] rewritten
-- [x] AI comes to this project
-- [x] much more blackouts, fuck you ai, want rewrite my stuff! fuck you you are an electron Bitch!
-- [x] GLM checked it, stupid guy! but finds 2 hidden design bugs, no execution but stupid fail!
-- [x] Claude checks again and again and again, my 5 hours limit used in 1.23 min. A record of my self, normally need 2 minutes
-- [x] wtf, fuck you Claude, fuck you Gemini, fuck you GLM, fuck you Kimi, fuck you DeepSeek, all others I do not use
-- [x] fuck! but runs again! I see my first instinct was the best, AI made me crazy!
-- [x] new rewrite with Claude Sonnet, first kick this asshole in his fucking balls 12 times! I get poor bitch!
-- [x] it runs...
-- [x] Fuck yeah, stable fast, secure and against scammers! only for privates!
-- [x] fail architecture for vibecoders!
-- [x] README AI slop from AI with a fucking touch of me!
-- [x] conditional initialization of fundament modules...
-- [x] Fundament modules are ready for the app logic.
-- [x] PostgreSQL bridge activ
-- [x] ShellMaster & Discord API not 100 % finished!
-- [X] Claude best practice bricked tools.py - VolkanSah fix it again! How can Vibecoders release so an trash!
-- [ ] some futers.. still crafting
+[x] 10 months before...
+[x] some blackouts
+[x] more blackouts
+[x] ... month 6 WTF... runs but only stupid secure LLM wrapper and tools...
+[x] ... pff brick again!
+[x] ... fuck!
+[x] ... rewrite
+[x] fuck Neon DB + MCP changes secure stuff! fuck
+[x] rewritten
+[x] GLM checked it, stupid guy! but finds 2 hidden design bugs, no execution but stupid fail!
+[x] Claude checks again and again and again, my 5 hours limit used in 1.23 min. A record of my self, normally need 2 minutes
+[x] wtf, fuck you Claude, fuck you Gemini, fuck you GLM, fuck you Kimi, fuck you DeepSeek, all others I do not use
+[x] fuck! but runs again! I see my first instinct was the best, AI made me crazy!
+[x] new rewrite with Claude Sonnet, first kick this asshole in his fucking balls 12 times! I get poor bitch!
+[x] it runs...
+[x] Fuck yeah, stable fast, secure and against scammers! only for privates!
+[x] fail architecture for vibecoders!
+[x] README AI slop from AI with a fucking touch of me!
+[] features... see code!
+- 
      
 </details>
 
@@ -600,7 +594,7 @@ None accessible from `app/*`. Injected as a validated dict by `main.py`.
 
 
 <details>
-<summary><b>- History & related projects</b> -</summary>
+<summary><b>📜 History & related projects</b></summary>
 
 [ShellMaster](https://github.com/VolkanSah/ChatGPT-ShellMaster) (2023, MIT) was the precursor — browser-accessible shell for ChatGPT with session memory, built before MCP was a concept. Universal AI Hub is its natural evolution: same idea, proper architecture, dual interface. And yes — the ShellMaster idea is back as a tool hook, now with a red security level and a conscience.
 
@@ -616,7 +610,7 @@ Related:
 
 
 <details>
-<summary><b>- License — Multi-License & ESOL (mandatory)</b> -</summary>
+<summary><b>⚖️ License — Multi-License & ESOL (mandatory)</b></summary>
 
 - Projekt GNU Affero General Public License v3.0 [see License](https://www.gnu.org/licenses/agpl-3.0.html) + Ethical Security Operations License v2.1 [see License](ESOL) — mandatory, non-severable
 - Some scripts i made Apache License 2.0 [see License](https://www.apache.org/licenses/LICENSE-2.0) + GNU General Public License v3.0 [see License](https://www.gnu.org/licenses/gpl-3.0.html) + MIT License [see License](https://opensource.org/licenses/MIT) (only for as for examples, some skills and agents public on MIT or other open source license i use here in this hub for showcases, see files for more infos)
@@ -632,5 +626,4 @@ Related:
 
 > crafted with passion - just wanted to understand how it works, don't actually need it, have a CLI 😄
 > 
-> README.md craftet (rewritten) by gemini 3 Pro , snippets from claude and me, terrible,i know! fix later! not important yet cause the code is the showcase! 
-
+> README.md craftet (rewritten) by gemini 3 Pro , fixed by me, looks terrible i know! AI slop from claude, geminie and me! Soon better i sewar!

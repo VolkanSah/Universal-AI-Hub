@@ -1,0 +1,140 @@
+{
+  "meta": {
+    "generated": "2026-03-16T19:31:39.838Z",
+    "docsPath": "docs",
+    "fileCount": 13
+  },
+  "nav": [
+    {
+      "type": "folder",
+      "name": "app",
+      "path": "docs/app",
+      "children": [
+        {
+          "type": "file",
+          "name": "app.md",
+          "path": "docs/app/app.md",
+          "title": "App",
+          "order": 999,
+          "tags": [],
+          "description": ""
+        },
+        {
+          "type": "file",
+          "name": "config.md",
+          "path": "docs/app/config.md",
+          "title": "Config",
+          "order": 999,
+          "tags": [],
+          "description": ""
+        },
+        {
+          "type": "file",
+          "name": "db_sync.md",
+          "path": "docs/app/db_sync.md",
+          "title": "Db Sync",
+          "order": 999,
+          "tags": [],
+          "description": ""
+        },
+        {
+          "type": "file",
+          "name": "mcp.md",
+          "path": "docs/app/mcp.md",
+          "title": "Mcp",
+          "order": 999,
+          "tags": [],
+          "description": ""
+        },
+        {
+          "type": "file",
+          "name": "models.md",
+          "path": "docs/app/models.md",
+          "title": "Models",
+          "order": 999,
+          "tags": [],
+          "description": ""
+        },
+        {
+          "type": "file",
+          "name": "providers.md",
+          "path": "docs/app/providers.md",
+          "title": "Providers",
+          "order": 999,
+          "tags": [],
+          "description": ""
+        },
+        {
+          "type": "file",
+          "name": "tools.md",
+          "path": "docs/app/tools.md",
+          "title": "Tools",
+          "order": 999,
+          "tags": [],
+          "description": ""
+        }
+      ]
+    },
+    {
+      "type": "folder",
+      "name": "fundaments",
+      "path": "docs/fundaments",
+      "children": [
+        {
+          "type": "file",
+          "name": "access_control.py.md",
+          "path": "docs/fundaments/access_control.py.md",
+          "title": "Access Control.Py",
+          "order": 999,
+          "tags": [],
+          "description": ""
+        },
+        {
+          "type": "file",
+          "name": "config_handler.py.md",
+          "path": "docs/fundaments/config_handler.py.md",
+          "title": "Config Handler.Py",
+          "order": 999,
+          "tags": [],
+          "description": ""
+        },
+        {
+          "type": "file",
+          "name": "encryption.py.md",
+          "path": "docs/fundaments/encryption.py.md",
+          "title": "Encryption.Py",
+          "order": 999,
+          "tags": [],
+          "description": ""
+        },
+        {
+          "type": "file",
+          "name": "postgresql.py.md",
+          "path": "docs/fundaments/postgresql.py.md",
+          "title": "Postgresql.Py",
+          "order": 999,
+          "tags": [],
+          "description": ""
+        },
+        {
+          "type": "file",
+          "name": "security.py.md",
+          "path": "docs/fundaments/security.py.md",
+          "title": "Security.Py",
+          "order": 999,
+          "tags": [],
+          "description": ""
+        },
+        {
+          "type": "file",
+          "name": "user_handler.py.md",
+          "path": "docs/fundaments/user_handler.py.md",
+          "title": "User Handler.Py",
+          "order": 999,
+          "tags": [],
+          "description": ""
+        }
+      ]
+    }
+  ]
+}
