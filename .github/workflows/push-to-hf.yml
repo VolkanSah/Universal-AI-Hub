@@ -1,0 +1,83 @@
+name: Push Branch -> Hugging Face Space
+
+# Ablegen unter: NemesisCyberForce/bulkScam/.github/workflows/push-to-hf.yml
+# Secret (im selben Repo): PULL_HF_GIT_TOKEN  (Hugging Face Token mit WRITE-Recht auf den Space)
+#
+# Bedienung: Actions -> "Push Branch -> Hugging Face Space" -> Run workflow
+#            Oben bei "Use workflow from" den Branch wählen, der nach HF soll.
+#            Dieser Branch wird per Force-Push auf HF main gelegt.
+
+on:
+  workflow_dispatch:
+    inputs:
+      hf_repo:
+        description: 'Hugging Face Space'
+        required: true
+        default: 'codey-lab/Universal-MCP-Hub'
+        type: string
+      confirm_overwrite:
+        description: 'ACHTUNG: Haken setzen, wenn HF main mit diesem Branch überschrieben werden darf'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    env:
+      HF_TOKEN: ${{ secrets.PULL_HF_GIT_TOKEN }}
+      HF_REPO_RAW: ${{ inputs.hf_repo }}
+      BRANCH: ${{ github.ref_name }}
+      REF_TYPE: ${{ github.ref_type }}
+      CONFIRM: ${{ inputs.confirm_overwrite }}
+
+    steps:
+      - name: Nur Branches erlaubt
+        run: |
+          if [ "$REF_TYPE" != "branch" ]; then
+            echo "::error::Bitte einen Branch auswählen (keinen Tag)."
+            exit 1
+          fi
+
+      - name: Checkout (gewählter Branch)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: true
+
+      - name: Preflight (HF Token + Bestätigung)
+        run: |
+          HF_REPO="${HF_REPO_RAW%/}"
+          if [ -z "$HF_TOKEN" ]; then
+            echo "::error::Secret PULL_HF_GIT_TOKEN ist leer oder nicht vorhanden."
+            exit 1
+          fi
+          CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer $HF_TOKEN" \
+            "https://huggingface.co/api/spaces/${HF_REPO}")
+          echo "HF API Status für ${HF_REPO}: $CODE"
+          if [ "$CODE" != "200" ]; then
+            echo "::error::HF-Token hat keinen Zugriff auf den Space (Status $CODE)."
+            exit 1
+          fi
+          if [ "$CONFIRM" != "true" ]; then
+            echo "::error::WARNUNG: HF main von ${HF_REPO} würde mit Branch '${BRANCH}' ÜBERSCHRIEBEN. Zum Bestätigen 'confirm_overwrite' ankreuzen."
+            exit 1
+          fi
+          echo "::warning::ACHTUNG: HF Space ${HF_REPO} (main) wird mit Branch '${BRANCH}' überschrieben!"
+
+      - name: Push nach Hugging Face
+        run: |
+          set -euo pipefail
+          HF_REPO="${HF_REPO_RAW%/}"
+          echo "Push: GitHub '${BRANCH}' -> HF Space '${HF_REPO}' (main)"
+
+          git lfs install
+          git remote remove hf 2>/dev/null || true
+          git remote add hf "https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_REPO}"
+          git push -f hf "HEAD:refs/heads/main"
+
+          echo "### Gepusht: \`${BRANCH}\` -> HF \`${HF_REPO}\` (main)" >> "$GITHUB_STEP_SUMMARY"
