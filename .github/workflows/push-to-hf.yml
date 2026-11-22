@@ -109,7 +109,7 @@ jobs:
             "*.parquet" "*.pt" "*.pth" "*.bin" "*.safetensors" "*.onnx" \
             "*.pdf" "*.mp3" "*.mp4" "*.wav"
 
-          git rm -r --cached . -q
+          git read-tree --empty
           git add -A
           git commit -q -m "Deploy ${BRANCH} @ ${GITHUB_SHA::7}"
 
