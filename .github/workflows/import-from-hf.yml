@@ -1,0 +1,127 @@
+name: Import Hugging Face Space -> GitHub Branch
+
+# Ablegen unter: NemesisCyberForce/bulkScam/.github/workflows/import-from-hf.yml
+# Secret (im selben Repo): PULL_HF_GIT_TOKEN  (Hugging Face Token, Read reicht)
+#
+# Legt einen NEUEN Branch "<name>-JJJJ-MM-TT" mit dem aktuellen Stand des HF Space an.
+# main/master/Standard-Branch werden nur mit gesetzter Bestätigung überschrieben.
+# Empfehlung: Import-Branch anschauen, dann per Pull Request nach main mergen.
+
+on:
+  workflow_dispatch:
+    inputs:
+      hf_repo:
+        description: 'Hugging Face Space'
+        required: true
+        default: 'codey-lab/Universal-MCP-Hub'
+        type: string
+      branch_name:
+        description: 'Basisname des neuen Branches (Datum wird angehängt, z. B. import-2026-11-21)'
+        required: false
+        default: 'import'
+        type: string
+      confirm_main:
+        description: 'ACHTUNG: Haken setzen, wenn main überschrieben werden darf'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    env:
+      HF_TOKEN: ${{ secrets.PULL_HF_GIT_TOKEN }}
+      HF_REPO_RAW: ${{ inputs.hf_repo }}
+      BRANCH_INPUT: ${{ inputs.branch_name }}
+      CONFIRM_MAIN: ${{ inputs.confirm_main }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+
+    steps:
+      # Immer vom Standard-Branch ausgehen, egal von wo der Workflow gestartet wurde
+      - name: Checkout Standard-Branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          lfs: true
+
+      - name: Git Identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Preflight (HF Token prüfen)
+        run: |
+          HF_REPO="${HF_REPO_RAW%/}"
+          if [ -z "$HF_TOKEN" ]; then
+            echo "::error::Secret PULL_HF_GIT_TOKEN ist leer oder nicht vorhanden."
+            exit 1
+          fi
+          CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer $HF_TOKEN" \
+            "https://huggingface.co/api/spaces/${HF_REPO}")
+          echo "HF API Status für ${HF_REPO}: $CODE"
+          if [ "$CODE" != "200" ]; then
+            echo "::error::HF-Token hat keinen Zugriff auf den Space (Status $CODE)."
+            exit 1
+          fi
+
+      - name: Branch bestimmen und main-Schutz
+        run: |
+          set -euo pipefail
+          BASE="${BRANCH_INPUT:-import}"
+          BASE="${BASE// /-}"
+          DATE_PART="$(TZ=Europe/Berlin date +%Y-%m-%d)"
+          TIME_PART="$(TZ=Europe/Berlin date +%H%M)"
+
+          if [ "$BASE" = "main" ] || [ "$BASE" = "master" ] || [ "$BASE" = "$DEFAULT_BRANCH" ]; then
+            TARGET="$BASE"
+            if [ "$CONFIRM_MAIN" != "true" ]; then
+              echo "::error::WARNUNG: '$TARGET' würde mit dem HF-Stand ÜBERSCHRIEBEN. Zum Bestätigen 'confirm_main' ankreuzen oder einen anderen Namen (z. B. import) wählen."
+              exit 1
+            fi
+            echo "::warning::ACHTUNG: GitHub-Branch '$TARGET' wird mit dem Stand von Hugging Face überschrieben!"
+          else
+            TARGET="${BASE}-${DATE_PART}"
+            if git ls-remote --exit-code --heads origin "$TARGET" >/dev/null 2>&1; then
+              TARGET="${TARGET}-${TIME_PART}"
+            fi
+          fi
+
+          echo "TARGET_BRANCH=$TARGET" >> "$GITHUB_ENV"
+          echo "### Import-Ziel: \`$TARGET\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Ziel-Branch: $TARGET"
+
+      - name: Import HF Space -> GitHub
+        run: |
+          set -euo pipefail
+          HF_REPO="${HF_REPO_RAW%/}"
+          echo "Import: HF (${HF_REPO}) -> GitHub Branch ${TARGET_BRANCH}"
+
+          if git ls-remote --exit-code --heads origin "$TARGET_BRANCH" >/dev/null 2>&1; then
+            git fetch origin "$TARGET_BRANCH"
+            git checkout -B "$TARGET_BRANCH" "origin/$TARGET_BRANCH"
+          else
+            git checkout -b "$TARGET_BRANCH"
+          fi
+
+          rm -rf /tmp/hf_tmp
+          git clone --depth=1 "https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_REPO}" /tmp/hf_tmp
+
+          # .git und .github bleiben unangetastet (github.token darf keine Workflow-Dateien ändern)
+          rsync -a --delete \
+            --exclude='.git' \
+            --exclude='.github' \
+            /tmp/hf_tmp/ ./
+
+          git add -A
+          if git diff --staged --quiet; then
+            echo "Keine Änderungen gegenüber dem Ausgangsstand."
+          else
+            git commit -m "Import from Hugging Face Space ${HF_REPO} ($(TZ=Europe/Berlin date '+%Y-%m-%d %H:%M'))"
+          fi
+
+          git push origin "HEAD:refs/heads/${TARGET_BRANCH}"
